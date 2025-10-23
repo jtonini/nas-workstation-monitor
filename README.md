@@ -17,9 +17,9 @@ This system monitors NAS mounts on all lab workstations from a central server (j
 
 ## Script Version
 
-**nas_workstation_monitor_full_hpclib.py** - Full HPC Library Integration
+**nas_workstation_monitor.py**
 
-Uses all hpclib modules for production-ready HPC monitoring:
+Uses hpclib modules for production-ready HPC monitoring:
 - `dorunrun` - Reliable subprocess management
 - `sqlitedb` - Database with proper locking
 - `urlogger` - Unified logging framework
@@ -57,11 +57,11 @@ jonimitchell (control server)
 
 ```bash
 # Clone the repository
-cd /usr/local/src
+cd /usr/local/
 sudo git clone https://github.com/georgeflanagin/hpclib.git
 
 # Add to Python path
-echo 'export PYTHONPATH="/usr/local/src/hpclib:$PYTHONPATH"' >> ~/.bashrc
+echo 'export PYTHONPATH="/usr/local/hpclib:$PYTHONPATH"' >> ~/.bashrc
 source ~/.bashrc
 
 # Verify installation
@@ -88,7 +88,7 @@ done
 
 ### 3. Sudo Configuration
 
-On each workstation, add to `/etc/sudoers.d/nas-monitor`:
+If zeus connects to the workstations as root, nothing needs to be done. If not, on each workstation, add to `/etc/sudoers.d/nas-monitor`:
 ```bash
 zeus ALL=(ALL) NOPASSWD: /bin/mount, /usr/bin/mount
 ```
@@ -97,34 +97,34 @@ zeus ALL=(ALL) NOPASSWD: /bin/mount, /usr/bin/mount
 
 ```bash
 # 1. Create installation directory
-mkdir -p /home/zeus/nas-monitor/logs
+mkdir -p /home/zeus/nas-monitor
 cd /home/zeus/nas-monitor
 
 # 2. Copy script
-cp nas_workstation_monitor_full_hpclib.py .
-chmod +x nas_workstation_monitor_full_hpclib.py
+cp nas_workstation_monitor.py .
+chmod +x nas_workstation_monitor.py
 
 # 3. Copy query tool
 cp nas_workstation_query.py .
 chmod +x nas_workstation_query.py
 
 # 4. Configure email settings
-nano nas_workstation_monitor_full_hpclib.py
+vi nas_workstation_monitor.py
 # Update: EMAIL_TO = "your-email@domain.com"
 # Update: SMTP_SERVER = "your-smtp-server"
 
 # 5. Configure critical software paths
-nano nas_workstation_monitor_full_hpclib.py
+vi nas_workstation_monitor.py
 # Update the CRITICAL_SOFTWARE_PATHS dictionary with your actual paths
 
 # 6. Test manual run (with just 2 workstations)
 export my_computers="aamy adam"
-./nas_workstation_monitor_full_hpclib.py --fix
+./nas_workstation_monitor.py --fix
 
 # 7. Add to crontab (runs hourly at minute 0)
 crontab -e
 # Add this line:
-0 * * * * export my_computers="aamy adam alexis boyi camryn cooper evan hamilton irene2 josh justin kevin khanh mayer michael sarah thais"; /home/zeus/nas-monitor/nas_workstation_monitor_full_hpclib.py --fix --notify --keep-hours 72
+0 * * * * export my_computers="aamy adam alexis boyi camryn cooper evan hamilton irene2 josh justin kevin khanh mayer michael sarah thais"; /home/zeus/nas-monitor/nas_workstation_monitor.py --fix --notify --keep-hours 72
 ```
 
 ## Usage
@@ -133,22 +133,22 @@ crontab -e
 
 ```bash
 # Monitor all workstations (check only)
-./nas_workstation_monitor_full_hpclib.py
+./nas_workstation_monitor.py
 
 # Monitor specific workstations
-./nas_workstation_monitor_full_hpclib.py --workstations adam sarah michael
+./nas_workstation_monitor.py --workstations adam sarah michael
 
 # Monitor and attempt fixes
-./nas_workstation_monitor_full_hpclib.py --fix
+./nas_workstation_monitor.py --fix
 
 # Monitor, fix, and send email if issues found
-./nas_workstation_monitor_full_hpclib.py --fix --notify
+./nas_workstation_monitor.py --fix --notify
 
-# Keep only last 24 hours (aggressive cleanup)
-./nas_workstation_monitor_full_hpclib.py --fix --keep-hours 24
+# Keep only last 24 hours
+./nas_workstation_monitor.py --fix --keep-hours 24
 
 # Aggressive cleanup: remove ALL old data including unresolved failures
-./nas_workstation_monitor_full_hpclib.py --fix --keep-hours 24 --aggressive-cleanup
+./nas_workstation_monitor.py --fix --keep-hours 24 --aggressive-cleanup
 ```
 
 ### Querying History
@@ -220,13 +220,13 @@ Truly "no historical record" - only keeps recent data.
 
 ```bash
 # Standard mode (default) - keeps 3 days
-./nas_workstation_monitor_full_hpclib.py --fix --keep-hours 72
+./nas_workstation_monitor.py --fix --keep-hours 72
 
 # Aggressive mode - keeps only 1 day
-./nas_workstation_monitor_full_hpclib.py --fix --keep-hours 24 --aggressive-cleanup
+./nas_workstation_monitor.py --fix --keep-hours 24 --aggressive-cleanup
 
 # Disable automatic cleanup
-./nas_workstation_monitor_full_hpclib.py --fix --keep-hours 0
+./nas_workstation_monitor.py --fix --keep-hours 0
 ```
 
 ## Database Schema

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NAS Workstation Mount Monitor - HPC Library Integration
+NAS Workstation Mount Monitor
 Monitors and maintains NAS mounts across workstations using hpclib patterns
 """
 
@@ -38,10 +38,10 @@ class ExitCode(IntEnum):
     OUT_OF_RANGE = 255
 
 # Configuration
-DB_PATH = "/home/zeus/nas_workstation_monitor.db"
-LOG_FILE = "/home/zeus/nas_workstation_monitor.log"
+DB_PATH = "/home/zeus/nas-monitor/nas_workstation_monitor.db" # need to create nas-monitor dir
+LOG_FILE = "/home/zeus/nas-monitor/nas_workstation_monitor.log"
 EMAIL_FROM = "zeus@jonimitchell"
-EMAIL_TO = "admin@yourdomain.com"  # Update this
+EMAIL_TO = "jtonini@richmond.edu"  # Update this
 SMTP_SERVER = "localhost"
 SMTP_PORT = 25
 
@@ -54,8 +54,7 @@ if not WORKSTATIONS:
 
 # Critical software paths to verify
 CRITICAL_SOFTWARE_PATHS = {
-    '/usr/local/chem.sw': ['gaussian', 'orca', 'lumerical'],
-    '/usr/local/phys.sw': ['matlab', 'mathematica'],
+    '/usr/local/chem.sw': ['amber', 'Columbus', 'gaussian'] # Update this
 }
 
 # SSH options for reliable connections
