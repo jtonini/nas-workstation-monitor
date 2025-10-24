@@ -15,7 +15,7 @@ preceding it.
 """
 import os
 import sys
-min_py = (3,11)
+min_py = (3, 9)
 if sys.version_info < min_py:
     print(f"This program requires Python {min_py[0]}.{min_py[1]}, or higher.")
     sys.exit(os.EX_SOFTWARE)
