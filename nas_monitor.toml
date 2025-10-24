@@ -1,0 +1,128 @@
+########################################################################
+# NAS Workstation Monitor Configuration
+# Following dfstat pattern
+########################################################################
+
+########################################################################
+# Database configuration
+########################################################################
+database = '/home/zeus/nas_workstation_monitor.db'
+schema_file = './nas_monitor_schema.sql'
+
+########################################################################
+# Logging configuration
+########################################################################
+log_file = '/home/zeus/nas_workstation_monitor.log'
+
+########################################################################
+# Email notification configuration
+########################################################################
+notification_addresses = [
+    'hpc@richmond.edu',
+    'gflanagin@richmond.edu',
+    'jtonini@richmond.edu'
+]
+notification_source = 'zeus@jonimitchell'
+
+# SMTP settings
+smtp_server = 'localhost'
+smtp_port = 25
+
+########################################################################
+# Monitoring behavior
+########################################################################
+
+###
+# Number of seconds between monitoring runs (3600 = hourly)
+###
+time_interval = 3600
+
+###
+# Attempt to remount when mount issues detected
+###
+attempt_fix = true
+
+###
+# Send email notifications when issues found
+###
+send_notifications = true
+
+###
+# Track active users during checks
+###
+track_users = true
+
+###
+# Check for mount-related processes
+###
+check_processes = true
+
+########################################################################
+# SSH configuration
+########################################################################
+ssh_timeout = 30
+ssh_config_file = '~/.ssh/config'
+
+# SSH connection options
+ssh_options = [
+    '-o', 'ConnectTimeout=10',
+    '-o', 'StrictHostKeyChecking=no',
+    '-o', 'BatchMode=yes',
+    '-o', 'PasswordAuthentication=no'
+]
+
+########################################################################
+# Chemistry workstations to monitor
+########################################################################
+
+###
+# List of chemistry workstations with their critical mount points
+# Format: {host = "hostname", mounts = ["mount1", "mount2", ...]}
+###
+workstations = [
+    {host = 'aamy', mounts = ['/usr/local/chem.sw']},
+    {host = 'adam', mounts = ['/usr/local/chem.sw']},
+    {host = 'alexis', mounts = ['/usr/local/chem.sw']},
+    {host = 'boyi', mounts = ['/usr/local/chem.sw']},
+    {host = 'camryn', mounts = ['/usr/local/chem.sw']},
+    {host = 'cooper', mounts = ['/usr/local/chem.sw']},
+    {host = 'evan', mounts = ['/usr/local/chem.sw']},
+    {host = 'hamilton', mounts = ['/usr/local/chem.sw']},
+    {host = 'irene2', mounts = ['/usr/local/chem.sw']},
+    {host = 'josh', mounts = ['/usr/local/chem.sw']},
+    {host = 'justin', mounts = ['/usr/local/chem.sw']},
+    {host = 'kevin', mounts = ['/usr/local/chem.sw']},
+    {host = 'khanh', mounts = ['/usr/local/chem.sw']},
+    {host = 'mayer', mounts = ['/usr/local/chem.sw']},
+    {host = 'michael', mounts = ['/usr/local/chem.sw']},
+    {host = 'sarah', mounts = ['/usr/local/chem.sw']},
+    {host = 'thais', mounts = ['/usr/local/chem.sw']}
+]
+
+########################################################################
+# Critical software to verify on mount point
+########################################################################
+
+###
+# Software packages that should be accessible on /usr/local/chem.sw
+# Format: {mount = "/mount/point", software = ["pkg1", "pkg2", ...]}
+###
+critical_software = [
+    {mount = '/usr/local/chem.sw', software = ['gaussian', 'orca', 'lumerical']}
+]
+
+########################################################################
+# Database cleanup configuration
+########################################################################
+
+###
+# Hours of history to keep in database (72 = 3 days)
+# This value is stored in the database config table and can be updated there
+###
+keep_hours = 72
+
+###
+# Aggressive cleanup mode removes ALL old data including unresolved issues
+# Standard mode (false) keeps unresolved issues regardless of age
+###
+aggressive_cleanup = false
