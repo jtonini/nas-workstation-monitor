@@ -1,3 +1,0 @@
-[submodule "hpclib"]
-	path = hpclib
-	url = https://github.com/georgeflanagin/hpclib.git
