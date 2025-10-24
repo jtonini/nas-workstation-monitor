@@ -109,7 +109,8 @@ def load_config(config_path: str) -> object:
 def check_workstation_online(workstation: str) -> bool:
     """Check if workstation is reachable"""
     cmd = ['ping', '-c', '1', '-W', '2', workstation]
-    exit_code, stdout, stderr = dorunrun(cmd, timeout=5, return_datatype=tuple)
+    result = dorunrun(cmd, timeout=5)
+    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
     return exit_code == 0
 
 
@@ -144,7 +145,8 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     global myconfig
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'mount -av']
-    exit_code, stdout, stderr = dorunrun(cmd, timeout=myconfig.ssh_timeout, return_datatype=tuple)
+    result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
+    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code != 0:
         return False, [], stderr
@@ -208,7 +210,8 @@ def verify_software_access(workstation: str, mount_point: str,
         cmd = ['ssh'] + myconfig.ssh_options + [workstation, 
                f'test -e {test_path} && echo "OK" || echo "MISSING"']
         
-        exit_code, stdout, stderr = dorunrun(cmd, timeout=10, return_datatype=tuple)
+        result = dorunrun(cmd, timeout=10)
+    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
         results[software] = 'OK' in stdout
         
         # Log to database
@@ -223,7 +226,8 @@ def attempt_remount(workstation: str) -> Tuple[bool, str]:
     global myconfig, logger
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'sudo mount -a']
-    exit_code, stdout, stderr = dorunrun(cmd, timeout=60, return_datatype=tuple)
+    result = dorunrun(cmd, timeout=60)
+    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code == 0:
         logger.info(f"Successfully remounted on {workstation}")
@@ -239,7 +243,8 @@ def count_active_users(workstation: str) -> int:
     global myconfig
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'who | wc -l']
-    exit_code, stdout, stderr = dorunrun(cmd, timeout=10, return_datatype=tuple)
+    result = dorunrun(cmd, timeout=10)
+    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code == 0:
         try:
