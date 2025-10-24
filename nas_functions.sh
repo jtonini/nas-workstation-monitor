@@ -8,7 +8,7 @@
 #
 # INSTALLATION:
 #   Add to your ~/.bashrc:
-#   source /home/zeus/nas-monitor/nas_functions.sh
+#   source /home/zeus/nas-workstation-monitor/nas_functions.sh
 #
 #   Then reload:
 #   source ~/.bashrc
@@ -28,7 +28,7 @@
 ################################################################################
 
 # Base directory where NAS monitor is installed
-NAS_MONITOR_DIR="/home/zeus/nas-monitor"
+NAS_MONITOR_DIR="/home/zeus/nas-workstation-monitor"
 
 ################################################################################
 # nas_monitor - Run monitoring check once
