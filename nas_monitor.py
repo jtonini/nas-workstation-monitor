@@ -50,15 +50,15 @@ except ImportError:
 ###
 # From hpclib (git submodule)
 ###
-import linuxutils
-from urdecorators import show_exceptions_and_frames as trap
-from urlogger import URLogger
-from dorunrun import dorunrun
+from hpclib import linuxutils
+from hpclib.urdecorators import show_exceptions_and_frames as trap
+from hpclib.urlogger import URLogger
+from hpclib.dorunrun import dorunrun
 
 ###
 # Local imports
 ###
-from nas_monitor_dbclass import NASMonitorDB
+from nas_monitor_db import NASMonitorDB
 
 ###
 # Credits
@@ -110,8 +110,7 @@ def check_workstation_online(workstation: str) -> bool:
     """Check if workstation is reachable"""
     cmd = ['ping', '-c', '1', '-W', '2', workstation]
     result = dorunrun(cmd, timeout=5)
-    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
-    return exit_code == 0
+    return result.get('returncode', -1) == 0
 
 
 @trap
@@ -145,8 +144,7 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     global myconfig
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'mount -av']
-    result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
-    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
+    exit_code, stdout, stderr = dorunrun(cmd, timeout=myconfig.ssh_timeout, return_datatype=tuple)
     
     if exit_code != 0:
         return False, [], stderr
@@ -187,11 +185,11 @@ def verify_software_access(workstation: str, mount_point: str,
     Args:
         workstation: Hostname to check
         mount_point: Base mount path (e.g., '/usr/local/chem.sw')
-        software_list: List of software names to verify (e.g., ['amber', 'gaussian'])
+        software_list: List of software names to verify (e.g., ['gaussian', 'orca'])
     
     Returns:
         Dictionary mapping software names to accessibility boolean:
-        Example: {'amber': True, 'gaussian': False, 'Columbus': True}
+        Example: {'gaussian': True, 'orca': False, 'lumerical': True}
         
     Side Effects:
         - Inserts software check results into database via db.add_software_check()
@@ -211,11 +209,11 @@ def verify_software_access(workstation: str, mount_point: str,
                f'test -e {test_path} && echo "OK" || echo "MISSING"']
         
         result = dorunrun(cmd, timeout=10)
-    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
+        exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
         results[software] = 'OK' in stdout
         
         # Log to database
-        db.insert_software_check(workstation, software, mount_point, results[software])
+        db.add_software_check(workstation, software, mount_point, results[software])
     
     return results
 
@@ -514,7 +512,7 @@ def nas_monitor_main(myargs: argparse.Namespace = None) -> int:
     global myconfig, logger, db
     
     # Load configuration
-    config_file = myargs.config if myargs else '/home/zeus/nas-workstation-monitor/nas_monitor.toml'
+    config_file = myargs.config if myargs else '/home/zeus/nas-monitor/nas_monitor.toml'
     myconfig = load_config(config_file)
     
     # Initialize logger
