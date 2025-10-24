@@ -342,7 +342,7 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
     action_str = ', '.join(report['actions_taken']) if report['actions_taken'] else None
     
     for mount in mounts:
-        db.insert_mount_status(
+        db.add_mount_status(
             workstation, mount['mount_point'], mount['device'], 
             mount['status'], report['active_users'], action_str,
             mynetid, os.getenv('SLURM_JOB_ID')
