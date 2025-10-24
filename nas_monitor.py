@@ -110,7 +110,7 @@ def check_workstation_online(workstation: str) -> bool:
     """Check if workstation is reachable"""
     cmd = ['ping', '-c', '1', '-W', '2', workstation]
     result = dorunrun(cmd, timeout=5)
-    return result.get('returncode', -1) == 0
+    return result.get('code', -1) == 0
 
 
 @trap
@@ -216,7 +216,7 @@ def verify_software_access(workstation: str, mount_point: str,
                f'test -e {test_path} && echo "OK" || echo "MISSING"']
         
         result = dorunrun(cmd, timeout=10)
-        exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
+        exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
         results[software] = 'OK' in stdout
         
         # Log to database
@@ -232,7 +232,7 @@ def attempt_remount(workstation: str) -> Tuple[bool, str]:
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'sudo mount -a']
     result = dorunrun(cmd, timeout=60)
-    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
+    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code == 0:
         logger.info(f"Successfully remounted on {workstation}")
@@ -249,7 +249,7 @@ def count_active_users(workstation: str) -> int:
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'who | wc -l']
     result = dorunrun(cmd, timeout=10)
-    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
+    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code == 0:
         try:
