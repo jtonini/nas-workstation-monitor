@@ -509,7 +509,7 @@ def nas_monitor_main(myargs: argparse.Namespace = None) -> int:
     global myconfig, logger, db
     
     # Load configuration
-    config_file = myargs.config if myargs else '/home/zeus/nas-monitor/nas_monitor.toml'
+    config_file = myargs.config if myargs else '/home/zeus/nas-workstation-monitor/nas_monitor.toml'
     myconfig = load_config(config_file)
     
     # Initialize logger
@@ -558,7 +558,7 @@ if __name__ == '__main__':
         description="Monitor NAS mounts on chemistry workstations")
 
     parser.add_argument('-c', '--config', type=str, 
-        default='/home/zeus/nas-monitor/nas_monitor.toml',
+        default='/home/zeus/nas-workstation-monitor/nas_monitor.toml',
         help="Configuration file path")
     parser.add_argument('--once', action='store_true',
         help="Run once and exit (don't loop)")
