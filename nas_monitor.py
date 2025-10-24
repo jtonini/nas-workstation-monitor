@@ -7,7 +7,7 @@ Automated monitoring and maintenance of NAS mounts across lab workstations
 import typing
 from typing import *
 
-min_py = (3, 8)
+min_py = (3, 9)
 
 ###
 # Standard imports, starting with os and sys
@@ -58,7 +58,7 @@ from dorunrun import dorunrun
 ###
 # Local imports
 ###
-from nas_monitor_db import NASMonitorDB
+from nas_monitor_dbclass import NASMonitorDB
 
 ###
 # Credits
