@@ -108,7 +108,7 @@ workstations = [
 # Format: {mount = "/mount/point", software = ["pkg1", "pkg2", ...]}
 ###
 critical_software = [
-    {mount = '/usr/local/chem.sw', software = ['gaussian', 'orca', 'lumerical']}
+    {mount = '/usr/local/chem.sw', software = ['amber', 'Columbus', 'gaussian']}
 ]
 
 ########################################################################

@@ -186,11 +186,11 @@ def verify_software_access(workstation: str, mount_point: str,
     Args:
         workstation: Hostname to check
         mount_point: Base mount path (e.g., '/usr/local/chem.sw')
-        software_list: List of software names to verify (e.g., ['gaussian', 'orca'])
+        software_list: List of software names to verify (e.g., ['amber', 'Columbus', 'gaussian'])
     
     Returns:
         Dictionary mapping software names to accessibility boolean:
-        Example: {'gaussian': True, 'orca': False, 'lumerical': True}
+        Example: {'amber': True, 'Columbus': True, 'gaussian': False}
         
     Side Effects:
         - Inserts software check results into database via db.add_software_check()
