@@ -10,7 +10,7 @@ from typing import *
 ###
 # Standard imports, starting with os and sys
 ###
-min_py = (3, 8)
+min_py = (3, 9)
 import os
 import sys
 if sys.version_info < min_py:

@@ -7,7 +7,7 @@ Query and report on NAS mount monitoring database
 import typing
 from typing import *
 
-min_py = (3, 8)
+min_py = (3, 9)
 
 ###
 # Standard imports, starting with os and sys
@@ -440,7 +440,7 @@ if __name__ == '__main__':
     )
     
     parser.add_argument('-c', '--config', type=str,
-        default='/home/zeus/nas-monitor/nas_monitor.toml',
+        default='/home/zeus/nas-workstation-monitor/nas_monitor.toml',
         help="Configuration file path")
     
     parser.add_argument('-v', '--verbose', action='store_true',
