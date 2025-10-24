@@ -124,14 +124,14 @@ def dorunrun(command:Union[str, list],
         else:
             return {"OK":b_code,
                     "code":i_code,
-                    "name":ExitCode(i_code).name,
+                    "name":ExitCode(i_code).name if i_code in ExitCode else f"EXIT_{i_code}",
                     "stdout":s,
                     "stderr":e}
 
     except subprocess.TimeoutExpired as e:
         return {"OK":False,
                 "code":255,
-                "name":ExitCode(255).name,
+                "name":ExitCode(255).name if 255 in ExitCode else "EXIT_255",
                 "stdout":"",
                 "stderr":""}
 
