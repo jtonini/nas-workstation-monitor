@@ -144,7 +144,8 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     global myconfig
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'mount -av']
-    exit_code, stdout, stderr = dorunrun(cmd, timeout=myconfig.ssh_timeout, return_datatype=tuple)
+    result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
+    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code != 0:
         return False, [], stderr
