@@ -110,7 +110,7 @@ def check_workstation_online(workstation: str) -> bool:
     """Check if workstation is reachable"""
     cmd = ['ping', '-c', '1', '-W', '2', workstation]
     result = dorunrun(cmd, timeout=5)
-    return result.get('returncode', -1) == 0
+    return result.get("code", -1) == 0
 
 
 @trap
