@@ -252,7 +252,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_current_status(self) -> Union[pandas.DataFrame, List]:
+    def get_current_status(self) -> Union['pandas.DataFrame', List]:
         """
         Get current status of all workstations
         
@@ -263,7 +263,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_unresolved_failures(self) -> Union[pandas.DataFrame, List]:
+    def get_unresolved_failures(self) -> Union['pandas.DataFrame', List]:
         """
         Get all unresolved mount failures
         
@@ -274,7 +274,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_recent_failures(self) -> Union[pandas.DataFrame, List]:
+    def get_recent_failures(self) -> Union['pandas.DataFrame', List]:
         """
         Get summary of recent failures (last 24 hours)
         
@@ -285,7 +285,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_reliability(self) -> Union[pandas.DataFrame, List]:
+    def get_reliability(self) -> Union['pandas.DataFrame', List]:
         """
         Get 7-day reliability statistics for all workstations
         
@@ -296,7 +296,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_software_summary(self) -> Union[pandas.DataFrame, List]:
+    def get_software_summary(self) -> Union['pandas.DataFrame', List]:
         """
         Get software availability summary (last 7 days)
         
@@ -361,7 +361,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_workstation_detail(self, workstation: str, hours: int = 24) -> Union[pandas.DataFrame, List]:
+    def get_workstation_detail(self, workstation: str, hours: int = 24) -> Union['pandas.DataFrame', List]:
         """
         Get detailed history for a specific workstation
         
@@ -383,7 +383,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_mount_history(self, workstation: str, mount_point: str, hours: int = 168) -> Union[pandas.DataFrame, List]:
+    def get_mount_history(self, workstation: str, mount_point: str, hours: int = 168) -> Union['pandas.DataFrame', List]:
         """
         Get history for a specific mount on a workstation
         
