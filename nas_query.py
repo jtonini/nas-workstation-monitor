@@ -39,9 +39,9 @@ except:
 ###
 # From hpclib (git submodule)
 ###
-from hpclib import linuxutils
-from hpclib.urdecorators import show_exceptions_and_frames as trap
-from hpclib.urlogger import URLogger
+import linuxutils
+from urdecorators import show_exceptions_and_frames as trap
+from urlogger import URLogger
 
 ###
 # Local imports
