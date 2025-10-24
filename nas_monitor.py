@@ -50,15 +50,15 @@ except ImportError:
 ###
 # From hpclib (git submodule)
 ###
-import linuxutils
-from urdecorators import show_exceptions_and_frames as trap
-from urlogger import URLogger
-from dorunrun import dorunrun
+from hpclib import linuxutils
+from hpclib.urdecorators import show_exceptions_and_frames as trap
+from hpclib.urlogger import URLogger
+from hpclib.dorunrun import dorunrun
 
 ###
 # Local imports
 ###
-from nas_monitor_dbclass import NASMonitorDB
+from nas_monitor_db import NASMonitorDB
 
 ###
 # Credits
@@ -110,7 +110,7 @@ def check_workstation_online(workstation: str) -> bool:
     """Check if workstation is reachable"""
     cmd = ['ping', '-c', '1', '-W', '2', workstation]
     result = dorunrun(cmd, timeout=5)
-    return result.get('code', -1) == 0
+    return result.get('returncode', -1) == 0
 
 
 @trap
@@ -147,19 +147,42 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
     exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
-    # Parse mount output - look for actual mount results
+    # Parse mount output - only lines that are actual mount status reports
     mounts = []
     for line in stdout.splitlines():
-        if ':' in line or '/dev' in line:
-            parts = line.split()
-            if len(parts) >= 3:
-                mount_info = {
-                    'device': parts[0] if parts else '',
-                    'mount_point': parts[2] if len(parts) > 2 else '',
-                    'status': 'mounted' if 'already mounted' in line.lower() 
-                             else 'newly_mounted'
-                }
-                mounts.append(mount_info)
+        # Skip diagnostic/error lines from mount.nfs
+        if line.startswith('mount.nfs:') or not line.strip():
+            continue
+            
+        # Look for mount status lines: "device on mountpoint status"
+        # Examples:
+        #   "141.166.186.35:/path on /usr/local/chem.sw already mounted"
+        #   "/dev/sda1 on /boot already mounted"
+        #   "none on /proc ignored"
+        if ' on ' in line and (':' in line or '/dev' in line or 'none' in line):
+            try:
+                # Split by ' on ' to get device and rest
+                parts = line.split(' on ', 1)
+                if len(parts) == 2:
+                    device = parts[0].strip()
+                    rest = parts[1].strip()
+                    
+                    # Mount point is first word after 'on'
+                    rest_parts = rest.split()
+                    mount_point = rest_parts[0] if rest_parts else ''
+                    
+                    # Determine status
+                    status = 'mounted' if 'already mounted' in line.lower() else 'newly_mounted'
+                    
+                    mount_info = {
+                        'device': device,
+                        'mount_point': mount_point,
+                        'status': status
+                    }
+                    mounts.append(mount_info)
+            except Exception:
+                # Skip lines we can't parse
+                continue
     
     # If we found mounts in the output, consider it successful
     # Exit code can be non-zero due to other unrelated mount failures
@@ -216,7 +239,7 @@ def verify_software_access(workstation: str, mount_point: str,
                f'test -e {test_path} && echo "OK" || echo "MISSING"']
         
         result = dorunrun(cmd, timeout=10)
-        exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
+        exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
         results[software] = 'OK' in stdout
         
         # Log to database
@@ -232,7 +255,7 @@ def attempt_remount(workstation: str) -> Tuple[bool, str]:
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'sudo mount -a']
     result = dorunrun(cmd, timeout=60)
-    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
+    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code == 0:
         logger.info(f"Successfully remounted on {workstation}")
@@ -249,7 +272,7 @@ def count_active_users(workstation: str) -> int:
     
     cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'who | wc -l']
     result = dorunrun(cmd, timeout=10)
-    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
+    exit_code, stdout, stderr = result.get("returncode", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code == 0:
         try:
@@ -342,7 +365,7 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
     action_str = ', '.join(report['actions_taken']) if report['actions_taken'] else None
     
     for mount in mounts:
-        db.add_mount_status(
+        db.insert_mount_status(
             workstation, mount['mount_point'], mount['device'], 
             mount['status'], report['active_users'], action_str,
             mynetid, os.getenv('SLURM_JOB_ID')
