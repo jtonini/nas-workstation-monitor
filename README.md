@@ -1,381 +1,329 @@
 # NAS Workstation Mount Monitor
 
-Automated monitoring and maintenance of NAS mounts across lab workstations.
+Automated monitoring and maintenance of NAS mounts across chemistry lab workstations.
 
-## Overview
+## Features
 
-This system monitors NAS mounts on all lab workstations from a central server (jonimitchell). When students report "software is missing," this helps quickly identify if it's a mount issue.
+- **Automated Monitoring**: Hourly checks of all workstation NAS mounts
+- **Auto-Remediation**: Automatic remounting attempts when issues detected
+- **Database Tracking**: SQLite with views, triggers, and proper locking
+- **Software Verification**: Checks critical software accessibility (Amber, Gaussian, etc.)
+- **Email Notifications**: Alerts for persistent issues
+- **Query Tools**: Rich command-line interface for status and analysis
+- **HPC Integration**: Built on hpclib
 
-**Key Features:**
-- Hourly automated checks of all workstation mounts
-- Automatic remounting attempts when issues detected
-- SQLite database tracking of mount history
-- Software accessibility verification
-- Email notifications for persistent issues
-- User activity awareness (won't disrupt active users)
-- Full integration with hpclib tools (optional)
-
-## Script Version
-
-**nas_workstation_monitor.py**
-
-Uses hpclib modules for production-ready HPC monitoring:
-- `dorunrun` - Reliable subprocess management
-- `sqlitedb` - Database with proper locking
-- `urlogger` - Unified logging framework
-- `linuxutils` - System utilities (whoami, process checking)
-- `slurmutils` - SLURM job tracking
-- `sloppytree` - Flexible data structures
-
-**Automatic Fallback:** If hpclib is not installed, automatically uses standard Python libraries.
-
-## Workstation vs. Compute Node Design
-
-This system is designed for **workstations** (interactive user machines):
-
-- **Lightweight monitoring** - doesn't impact user experience
-- **User-aware** - tracks active users during checks
-- **Interactive focus** - prioritizes quick resolution for productivity
-- **Software verification** - ensures critical applications are accessible
-- **Runs from central server** - no agents on workstations
-
-## Architecture
-
-```
-jonimitchell (control server)
-    └─ zeus user runs cron job hourly
-        ├─ SSH to each workstation
-        ├─ Check mount status (mount -av)
-        ├─ Verify software accessibility
-        ├─ Attempt fixes if needed
-        └─ Log everything to database
-```
-
-## Prerequisites
-
-### 1. Install hpclib (Recommended)
+## Quick Start
 
 ```bash
-# Clone the repository
-cd /usr/local/
-sudo git clone https://github.com/georgeflanagin/hpclib.git
+# 1. Clone repository with submodules
+git clone --recurse-submodules https://github.com/jtonini/nas-workstation-monitor.git
+cd nas-workstation-monitor
 
-# Add to Python path
-echo 'export PYTHONPATH="/usr/local/hpclib:$PYTHONPATH"' >> ~/.bashrc
+# If you already cloned without submodules:
+git submodule init
+git submodule update
+
+# 2. Edit configuration
+vi nas_monitor.toml
+# Update: notification_addresses, workstations list
+
+# 3. Test with one workstation
+python3 nas_monitor.py --once --verbose
+
+# 4. Set up bash functions (recommended for sysadmins)
+echo 'source ~/nas-workstation-monitor/nas_functions.sh' >> ~/.bashrc
 source ~/.bashrc
 
-# Verify installation
-python3 -c "from dorunrun import dorunrun; print('✓ hpclib available')"
-```
-
-### 2. SSH Key Setup
-
-```bash
-# Ensure zeus@jonimitchell can SSH to all workstations without password
-ssh-keygen -t ed25519  # If no key exists
-
-# Copy key to all workstations
-for host in aamy adam alexis boyi camryn cooper evan hamilton irene2 josh justin kevin khanh mayer michael sarah thais; do
-    ssh-copy-id $host
-done
-
-# Test SSH access
-for host in aamy adam alexis boyi camryn cooper evan hamilton irene2 josh justin kevin khanh mayer michael sarah thais; do
-    echo "Testing $host..."
-    ssh -o ConnectTimeout=5 $host "hostname"
-done
-```
-
-### 3. Sudo Configuration
-
-If zeus connects to the workstations as root, nothing needs to be done. If not, on each workstation, add to `/etc/sudoers.d/nas-monitor`:
-```bash
-zeus ALL=(ALL) NOPASSWD: /bin/mount, /usr/bin/mount
-```
-
-## Installation
-
-```bash
-# 1. Create installation directory
-mkdir -p /home/zeus/nas-monitor
-cd /home/zeus/nas-monitor
-
-# 2. Copy script
-cp nas_workstation_monitor.py .
-chmod +x nas_workstation_monitor.py
-
-# 3. Copy query tool
-cp nas_workstation_query.py .
-chmod +x nas_workstation_query.py
-
-# 4. Configure email settings
-vi nas_workstation_monitor.py
-# Update: EMAIL_TO = "your-email@domain.com"
-# Update: SMTP_SERVER = "your-smtp-server"
-
-# 5. Configure critical software paths
-vi nas_workstation_monitor.py
-# Update the CRITICAL_SOFTWARE_PATHS dictionary with your actual paths
-
-# 6. Test manual run (with just 2 workstations)
-export my_computers="aamy adam"
-./nas_workstation_monitor.py --fix
-
-# 7. Add to crontab (runs hourly at minute 0)
+# 5. Deploy to cron
 crontab -e
-# Add this line:
-0 * * * * export my_computers="aamy adam alexis boyi camryn cooper evan hamilton irene2 josh justin kevin khanh mayer michael sarah thais"; /home/zeus/nas-monitor/nas_workstation_monitor.py --fix --notify --keep-hours 72
+# Add: 0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py
 ```
 
 ## Usage
 
-### Manual Monitoring
+### Bash Helper Functions (Recommended)
+
+These provide simple commands for sysadmins:
 
 ```bash
-# Monitor all workstations (check only)
-./nas_workstation_monitor.py
+# Run monitor once
+nas_monitor
 
-# Monitor specific workstations
-./nas_workstation_monitor.py --workstations adam sarah michael
+# Check current status
+nas_status
 
-# Monitor and attempt fixes
-./nas_workstation_monitor.py --fix
+# Show failures
+nas_failures
 
-# Monitor, fix, and send email if issues found
-./nas_workstation_monitor.py --fix --notify
+# Show reliability stats
+nas_reliability
 
-# Keep only last 24 hours
-./nas_workstation_monitor.py --fix --keep-hours 24
+# Show detail for specific workstation
+nas_detail adam
 
-# Aggressive cleanup: remove ALL old data including unresolved failures
-./nas_workstation_monitor.py --fix --keep-hours 24 --aggressive-cleanup
+# Show software availability
+nas_query software
 ```
 
-### Querying History
+### Command Line Interface
+
+All scripts have built-in `--help`:
 
 ```bash
-# Show current status of all workstations
-./nas_workstation_query.py status
+# Monitor help
+python3 nas_monitor.py --help
 
-# Show mount failures in last 24 hours
-./nas_workstation_query.py failures
-
-# Show software accessibility issues
-./nas_workstation_query.py software
-
-# Show reliability statistics (7-day)
-./nas_workstation_query.py stats
-
-# Show detailed history for a specific workstation
-./nas_workstation_query.py detail adam
-
-# Show database information
-./nas_workstation_query.py dbinfo
-
-# Preview cleanup (dry run) - STANDARD mode
-./nas_workstation_query.py cleanup --keep-hours 72
-
-# Preview cleanup (dry run) - AGGRESSIVE mode
-./nas_workstation_query.py cleanup --keep-hours 72 --aggressive
-
-# Perform cleanup - STANDARD mode
-./nas_workstation_query.py cleanup --keep-hours 72 --confirm
-
-# Perform cleanup - AGGRESSIVE mode
-./nas_workstation_query.py cleanup --keep-hours 24 --aggressive --confirm
+# Query help
+python3 nas_query.py --help
 ```
 
-## Database Cleanup Modes
-
-### STANDARD Mode (Default)
-Keeps recent data plus current state and unresolved issues.
-
-**Deletes:**
-- Mount status records older than retention period
-- Software availability checks older than retention period
-- Mount failures that were **resolved** longer ago than retention period
-
-**Keeps:**
-- Current workstation status (always)
-- **Unresolved** mount failures (always, no matter how old)
-- Recent data within retention period
-
-**Use when:** You want to track persistent problems over time.
-
-### AGGRESSIVE Mode
-Truly "no historical record" - only keeps recent data.
-
-**Deletes:**
-- Mount status records older than retention period
-- Software availability checks older than retention period
-- **ALL** mount failures older than retention period (resolved AND unresolved)
-- Workstation status for workstations not seen within retention period
-
-**Keeps:**
-- Only data within retention period
-
-**Use when:** You only care about current/recent status with no historical tracking.
-
-### Configuration
+#### Monitoring Commands
 
 ```bash
-# Standard mode (default) - keeps 3 days
-./nas_workstation_monitor.py --fix --keep-hours 72
+# Run once (no daemon mode)
+python3 nas_monitor.py --once
 
-# Aggressive mode - keeps only 1 day
-./nas_workstation_monitor.py --fix --keep-hours 24 --aggressive-cleanup
+# Run as daemon (continuous monitoring)
+python3 nas_monitor.py
 
-# Disable automatic cleanup
-./nas_workstation_monitor.py --fix --keep-hours 0
+# Specify custom config
+python3 nas_monitor.py --config /path/to/config.toml
+
+# Verbose output
+python3 nas_monitor.py --once --verbose
+
+# Set process priority
+python3 nas_monitor.py --nice 10
 ```
+
+#### Query Commands
+
+```bash
+# Current status of all workstations
+python3 nas_query.py status
+
+# Show unresolved failures
+python3 nas_query.py failures
+
+# Show recent failures (24 hours)
+python3 nas_query.py recent
+
+# Show 7-day reliability statistics
+python3 nas_query.py reliability
+
+# Show software availability
+python3 nas_query.py software
+
+# Show detailed history for a workstation
+python3 nas_query.py detail --workstation adam --hours 48
+
+# Show database configuration
+python3 nas_query.py config
+
+# Update database configuration
+python3 nas_query.py update-config --keep-hours 168 --aggressive
+
+# Clean up old records (dry run)
+python3 nas_query.py cleanup
+
+# Clean up old records (actually delete)
+python3 nas_query.py cleanup --confirm
+```
+
+## Configuration
+
+All settings are in `nas_monitor.toml`:
+
+```toml
+# Database and logging
+database = '/home/zeus/nas_workstation_monitor.db'
+log_file = '/home/zeus/nas_workstation_monitor.log'
+
+# Email notifications
+notification_addresses = ['hpc@richmond.edu']
+notification_source = 'zeus@jonimitchell'
+
+# Monitoring behavior
+time_interval = 3600  # 1 hour
+attempt_fix = true
+send_notifications = true
+
+# Workstations to monitor
+workstations = [
+    {host = 'adam', mounts = ['/usr/local/chem.sw']},
+    {host = 'sarah', mounts = ['/usr/local/chem.sw']},
+    # ... add more workstations
+]
+
+# Critical software to verify
+critical_software = [
+    {mount = '/usr/local/chem.sw', software = ['amber', 'gaussian']}
+]
+```
+
+See `nas_monitor.toml` for all options.
 
 ## Database Schema
 
-### workstation_mount_status
-Records each mount check:
-- timestamp, workstation, mount_point, device, filesystem
-- status, response_time_ms, error_message, action_taken
-- users_active, monitored_by, slurm_job_id
+The monitor uses SQLite with:
+- **Tables**: workstation_mount_status, workstation_status, mount_failures, software_availability
+- **Views**: current_workstation_summary, unresolved_failures, workstation_reliability, software_summary
+- **Triggers**: Auto-cleanup of old data, auto-resolve failures
+- **Config table**: Runtime configuration stored in database
 
-### workstation_status
-Current state of each workstation:
-- workstation, is_online, last_seen
-- last_successful_check, consecutive_failures
-- last_checked_by
+Schema is automatically loaded from `nas_monitor_schema.sql`.
 
-### mount_failures
-Tracks persistent mount issues:
-- workstation, mount_point, failure_count
-- first_failure, last_failure
-- resolved, resolved_at, resolved_by
+## Architecture
 
-### software_availability
-Software accessibility checks:
-- workstation, software_name, mount_point
-- is_accessible, check_time_ms
+Following the dfstat pattern:
 
-## Common Scenarios
-
-### When a student reports "software is missing"
-
-```bash
-# 1. Check current status
-./nas_workstation_query.py status
-
-# 2. Check specific workstation history
-./nas_workstation_query.py detail <workstation>
-
-# 3. Check software issues
-./nas_workstation_query.py software
-
-# 4. Manually trigger check and fix
-./nas_workstation_monitor_full_hpclib.py --workstations <workstation> --fix
+```
+nas_monitor.py              # Main daemon (like dfstat.py)
+├── nas_monitor_dbclass.py  # Database class (like dfdata.py)
+├── nas_monitor_schema.sql  # SQL schema with views/triggers
+├── nas_monitor.toml        # TOML configuration
+└── hpclib/                 # Git submodule
+    ├── sqlitedb.py         # Base SQLite class
+    ├── dorunrun.py         # Command execution
+    ├── urdecorators.py     # @trap decorator
+    ├── urlogger.py         # Logging
+    └── linuxutils.py       # Linux utilities
 ```
 
-### Reviewing weekly mount reliability
+Query tool:
+```
+nas_query.py               # Query interface
+└── nas_monitor_dbclass.py # Uses same DB class
+```
+
+## Files
+
+**Core Scripts:**
+- `nas_monitor.py` - Main monitoring daemon
+- `nas_monitor_dbclass.py` - Database class
+- `nas_query.py` - Query and reporting tool
+
+**Database:**
+- `nas_monitor_schema.sql` - Database schema with views/triggers
+
+**Configuration:**
+- `nas_monitor.toml` - Main configuration file
+- `nas_functions.sh` - Bash helper functions
+
+**HPC Library (git submodule):**
+- `hpclib/` - Git submodule pointing to [hpclib](https://github.com/georgeflanagin/hpclib)
+  - Automatically pulls latest versions
+  - Run `git submodule update --remote` to update
+
+## Requirements
+
+- Python 3.8+
+- SSH access to all workstations with key-based auth
+- SQLite3
+- Standard Python libraries (no pip installs required)
+
+## Deployment
+
+### Cron Setup
 
 ```bash
-# View 7-day statistics
-./nas_workstation_query.py stats
+# Edit crontab
+crontab -e
 
-# Identify problematic workstations
-./nas_workstation_query.py failures --hours 168
+# Add hourly monitoring
+0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_cron.log 2>&1
+```
+
+### Testing
+
+```bash
+# Test with single workstation
+python3 nas_monitor.py --once --verbose
+
+# Test without notifications
+python3 nas_monitor.py --once --no-notifications
+
+# Check database
+python3 nas_query.py status
 ```
 
 ## Troubleshooting
 
-### "Permission denied" when running mount -a remotely
+### Common Issues
 
-Ensure sudo is configured on workstations:
+**"No module named 'tomli'"**
 ```bash
-# On each workstation
-echo "zeus ALL=(ALL) NOPASSWD: /bin/mount, /usr/bin/mount" | sudo tee /etc/sudoers.d/nas-monitor
+pip install tomli --break-system-packages
 ```
 
-### SSH connections timing out
-
-Check SSH configuration:
+**"No module named 'hpclib' or 'sqlitedb'"**
 ```bash
-# Test connectivity
-ping -c 3 adam
+# Initialize submodules if not already done
+git submodule init
+git submodule update
 
-# Test SSH with verbose output
-ssh -vvv adam hostname
+# Or if hpclib folder is empty
+git submodule update --init --recursive
 ```
 
-### Database locked errors
-
-Should not occur with hpclib's SQLiteDB, but if you see them:
+**"Config file not found"**
 ```bash
-# Check for multiple running instances
-ps aux | grep nas_workstation_monitor
+# Specify full path
+python3 nas_monitor.py --config /home/zeus/nas-workstation-monitor/nas_monitor.toml
 ```
 
-### hpclib not found
-
+**"Permission denied" on SSH**
 ```bash
-# Check Python path
-echo $PYTHONPATH
-
-# Verify hpclib location
-ls /usr/local/src/hpclib/
-
-# Test import
-python3 -c "from dorunrun import dorunrun; print('OK')"
+# Verify SSH key access
+ssh adam 'mount -av'
 ```
 
-## Maintenance
+### Updating hpclib
 
-### Log Cleanup
-Logs older than 30 days are automatically cleaned up by the cron script.
-
-### Manual Database Cleanup
 ```bash
-# Check database size and stats
-./nas_workstation_query.py dbinfo
-
-# Preview cleanup
-./nas_workstation_query.py cleanup --keep-hours 72
-
-# Perform cleanup
-./nas_workstation_query.py cleanup --keep-hours 72 --confirm
+# Update to latest hpclib version
+cd nas-workstation-monitor
+git submodule update --remote hpclib
+git add hpclib
+git commit -m "Update hpclib submodule"
 ```
 
-### Database Backup
-```bash
-# Backup database
-cp /home/zeus/nas_workstation_monitor.db \
-   /home/zeus/nas_workstation_monitor.db.backup-$(date +%Y%m%d)
+### Logs
 
-# Restore from backup if needed
-cp /home/zeus/nas_workstation_monitor.db.backup-20250101 \
-   /home/zeus/nas_workstation_monitor.db
+```bash
+# View monitor log
+tail -f /home/zeus/nas_workstation_monitor.log
+
+# View cron log
+tail -f /home/zeus/nas_cron.log
 ```
 
-## File Locations
+## Development
 
-- Script: `/home/zeus/nas-monitor/nas_workstation_monitor_full_hpclib.py`
-- Query tool: `/home/zeus/nas-monitor/nas_workstation_query.py`
-- Database: `/home/zeus/nas_workstation_monitor.db`
-- Logs: `/home/zeus/nas_workstation_monitor.log`
+This project follows the coding pattern from [dfstat](https://github.com/georgeflanagin/newdfstat):
+
+- Global variables: `myconfig`, `logger`, `db`
+- `@trap` decorator on all functions
+- TOML configuration
+- SQL schema in separate file
+- Database class inherits from SQLiteDB
+- URLogger for logging
+- dorunrun for subprocess management
+
+See `dfanalysis.py` in the dfstat repo for the reference pattern.
+
+## Credits
+
+- Pattern based on [newdfstat](https://github.com/georgeflanagin/newdfstat) by George Flanagin
+- HPC library from [hpclib](https://github.com/georgeflanagin/hpclib) by George Flanagin
+- University of Richmond HPC Team
+
+## License
+
+MIT License - See LICENSE file for details
 
 ## Support
 
 For issues or questions:
-1. Check logs: `/home/zeus/nas_workstation_monitor.log`
-2. Review database with query tool
-3. Test SSH connectivity to affected workstation
-4. Verify NAS server is accessible
-5. Check workstation system logs: `ssh <workstation> "tail -50 /var/log/messages"`
-
-## HPC Library Integration
-
-The script uses these hpclib modules:
-- **dorunrun**: Subprocess management with timeout and error handling
-- **sqlitedb**: Database with proper locking for concurrent access
-- **urlogger**: Unified logging framework
-- **linuxutils**: System utilities (whoami, process checking)
-- **slurmutils**: SLURM job ID tracking (if run via SLURM)
-- **sloppytree**: Flexible data structures
-
-If hpclib is not installed, the script automatically falls back to standard Python libraries.
+- Email: hpc@richmond.edu
+- Create an issue on GitHub
