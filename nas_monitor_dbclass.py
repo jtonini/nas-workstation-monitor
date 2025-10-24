@@ -44,7 +44,7 @@ from urlogger import URLogger
 # Global objects
 ###
 mynetid = getpass.getuser()
-logger = URLogger.get_top_logger()
+logger = URLogger()
 
 ###
 # Credits
