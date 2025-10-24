@@ -298,20 +298,6 @@ tail -f /home/zeus/nas_workstation_monitor.log
 tail -f /home/zeus/nas_cron.log
 ```
 
-## Development
-
-This project follows the coding pattern from [dfstat](https://github.com/georgeflanagin/newdfstat):
-
-- Global variables: `myconfig`, `logger`, `db`
-- `@trap` decorator on all functions
-- TOML configuration
-- SQL schema in separate file
-- Database class inherits from SQLiteDB
-- URLogger for logging
-- dorunrun for subprocess management
-
-See `dfanalysis.py` in the dfstat repo for the reference pattern.
-
 ## Credits
 
 - Pattern based on [newdfstat](https://github.com/georgeflanagin/newdfstat) by George Flanagin
