@@ -50,10 +50,10 @@ except ImportError:
 ###
 # From hpclib (git submodule)
 ###
-from hpclib import linuxutils
-from hpclib.urdecorators import show_exceptions_and_frames as trap
-from hpclib.urlogger import URLogger
-from hpclib.dorunrun import dorunrun
+import linuxutils
+from urdecorators import show_exceptions_and_frames as trap
+from urlogger import URLogger
+from dorunrun import dorunrun
 
 ###
 # Local imports
