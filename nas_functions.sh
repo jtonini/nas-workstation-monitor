@@ -308,5 +308,150 @@ function nas_help() {
     echo ""
 }
 
+################################################################################
+# nas_dbcheck - Database health and configuration checks
+#
+# Provides quick diagnostic checks of the database status
+#
+# USAGE:
+#   nas_dbcheck [check_type]
+#
+# CHECK TYPES:
+#   config      Show database configuration settings
+#   retention   Show data retention and cleanup status  
+#   records     Show record counts by table
+#   health      Show comprehensive database health check (default)
+#   all         Run all checks
+#
+# EXAMPLES:
+#   nas_dbcheck              # Run health check
+#   nas_dbcheck config       # Show config only
+#   nas_dbcheck retention    # Check data retention
+#   nas_dbcheck all          # Run all diagnostics
+################################################################################
+function nas_dbcheck() {
+    local check_type="${1:-health}"
+    local db="$HOME/nas_workstation_monitor.db"
+    
+    case "$check_type" in
+        config)
+            echo "======================================================================"
+            echo "DATABASE CONFIGURATION"
+            echo "======================================================================"
+            sqlite3 "$db" <<'SQL'
+.mode column
+.headers on
+SELECT 
+    id,
+    keep_hours || ' hours (' || ROUND(keep_hours/24.0, 1) || ' days)' as retention,
+    CASE cleanup_mode 
+        WHEN 0 THEN 'Auto'
+        WHEN 1 THEN 'Aggressive'
+        ELSE 'Unknown'
+    END as cleanup_mode
+FROM monitor_config;
+SQL
+            ;;
+            
+        retention)
+            echo "======================================================================"
+            echo "DATA RETENTION STATUS"
+            echo "======================================================================"
+            sqlite3 "$db" <<'SQL'
+.mode column
+.headers on
+SELECT 
+    'Oldest mount record' as record_type,
+    MIN(timestamp) as timestamp,
+    ROUND((JULIANDAY('now') - JULIANDAY(MIN(timestamp))) * 24, 1) || ' hours' as age
+FROM workstation_mount_status
+UNION ALL
+SELECT 
+    'Newest mount record',
+    MAX(timestamp),
+    ROUND((JULIANDAY('now') - JULIANDAY(MAX(timestamp))) * 24, 1) || ' hours'
+FROM workstation_mount_status
+UNION ALL
+SELECT
+    'Total mount records',
+    COUNT(*),
+    '-'
+FROM workstation_mount_status;
+SQL
+            echo ""
+            echo "Configured retention:"
+            sqlite3 "$db" "SELECT keep_hours || ' hours (' || ROUND(keep_hours/24.0, 1) || ' days)' FROM monitor_config;"
+            ;;
+            
+        records)
+            echo "======================================================================"
+            echo "DATABASE RECORD COUNTS"
+            echo "======================================================================"
+            sqlite3 "$db" <<'SQL'
+.mode column
+.headers on
+SELECT 'Mount status records' as table_name, COUNT(*) as records FROM workstation_mount_status
+UNION ALL
+SELECT 'Workstation status', COUNT(*) FROM workstation_status
+UNION ALL
+SELECT 'Software checks', COUNT(*) FROM software_availability
+UNION ALL
+SELECT 'Mount failures', COUNT(*) FROM mount_failures;
+SQL
+            ;;
+            
+        health|"")
+            echo "======================================================================"
+            echo "DATABASE HEALTH CHECK"
+            echo "======================================================================"
+            echo ""
+            echo "Configuration:"
+            sqlite3 "$db" <<'SQL'
+.mode list
+SELECT '  Retention: ' || keep_hours || ' hours (' || ROUND(keep_hours/24.0, 1) || ' days)' FROM monitor_config
+UNION ALL
+SELECT '  Cleanup: ' || CASE cleanup_mode WHEN 0 THEN 'Auto' WHEN 1 THEN 'Aggressive' ELSE 'Unknown' END FROM monitor_config;
+SQL
+            echo ""
+            echo "Record Counts:"
+            sqlite3 "$db" <<'SQL'
+.mode list
+SELECT '  Mount records: ' || COUNT(*) FROM workstation_mount_status
+UNION ALL
+SELECT '  Workstation status: ' || COUNT(*) FROM workstation_status
+UNION ALL
+SELECT '  Software checks: ' || COUNT(*) FROM software_availability
+UNION ALL
+SELECT '  Failures: ' || COUNT(*) FROM mount_failures;
+SQL
+            echo ""
+            echo "Data Age:"
+            sqlite3 "$db" <<'SQL'
+.mode list
+SELECT '  Oldest: ' || MIN(timestamp) || ' (' || ROUND((JULIANDAY('now') - JULIANDAY(MIN(timestamp))) * 24, 1) || ' hours old)' FROM workstation_mount_status
+UNION ALL
+SELECT '  Newest: ' || MAX(timestamp) || ' (' || ROUND((JULIANDAY('now') - JULIANDAY(MAX(timestamp))) * 24, 1) || ' hours old)' FROM workstation_mount_status;
+SQL
+            echo ""
+            echo "Database File:"
+            ls -lh "$db" | awk '{print "  Size: " $5 "\n  Modified: " $6 " " $7 " " $8}'
+            ;;
+            
+        all)
+            nas_dbcheck config
+            echo ""
+            nas_dbcheck records
+            echo ""
+            nas_dbcheck retention
+            ;;
+            
+        *)
+            echo "Unknown check type: $check_type"
+            echo "Valid types: config, retention, records, health, all"
+            return 1
+            ;;
+    esac
+}
+
 # Print helpful message when sourced
 echo "NAS Monitor functions loaded. Type 'nas_help' for available commands."
