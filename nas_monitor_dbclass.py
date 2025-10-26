@@ -261,56 +261,56 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_current_status(self) -> Union[pandas.DataFrame, List]:
+    def get_current_status(self) -> List:
         """
         Get current status of all workstations
         
         Returns:
-            DataFrame if pandas available, list of tuples otherwise
+            List of tuples
         """
         return self.execute_SQL(NASMonitorDB.GET_CURRENT_STATUS)
 
 
     @trap
-    def get_unresolved_failures(self) -> Union[pandas.DataFrame, List]:
+    def get_unresolved_failures(self) -> List:
         """
         Get all unresolved mount failures
         
         Returns:
-            DataFrame if pandas available, list of tuples otherwise
+            List of tuples
         """
         return self.execute_SQL(NASMonitorDB.GET_UNRESOLVED_FAILURES)
 
 
     @trap
-    def get_recent_failures(self) -> Union[pandas.DataFrame, List]:
+    def get_recent_failures(self) -> List:
         """
         Get summary of recent failures (last 24 hours)
         
         Returns:
-            DataFrame if pandas available, list of tuples otherwise
+            List of tuples
         """
         return self.execute_SQL(NASMonitorDB.GET_RECENT_FAILURES)
 
 
     @trap
-    def get_reliability(self) -> Union[pandas.DataFrame, List]:
+    def get_reliability(self) -> List:
         """
         Get 7-day reliability statistics for all workstations
         
         Returns:
-            DataFrame if pandas available, list of tuples otherwise
+            List of tuples
         """
         return self.execute_SQL(NASMonitorDB.GET_RELIABILITY)
 
 
     @trap
-    def get_software_summary(self) -> Union[pandas.DataFrame, List]:
+    def get_software_summary(self) -> List:
         """
         Get software availability summary (last 7 days)
         
         Returns:
-            DataFrame if pandas available, list of tuples otherwise
+            List of tuples
         """
         return self.execute_SQL(NASMonitorDB.GET_SOFTWARE_SUMMARY)
 
@@ -370,7 +370,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_workstation_detail(self, workstation: str, hours: int = 24) -> Union[pandas.DataFrame, List]:
+    def get_workstation_detail(self, workstation: str, hours: int = 24) -> List:
         """
         Get detailed history for a specific workstation
         
@@ -379,7 +379,7 @@ class NASMonitorDB(SQLiteDB):
             hours: Hours of history to retrieve
             
         Returns:
-            DataFrame if pandas available, list of tuples otherwise
+            List of tuples
         """
         SQL = f"""
             SELECT timestamp, mount_point, device, status, users_active, action_taken
@@ -392,7 +392,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_mount_history(self, workstation: str, mount_point: str, hours: int = 168) -> Union[pandas.DataFrame, List]:
+    def get_mount_history(self, workstation: str, mount_point: str, hours: int = 168) -> List:
         """
         Get history for a specific mount on a workstation
         
@@ -402,7 +402,7 @@ class NASMonitorDB(SQLiteDB):
             hours: Hours of history (default: 168 = 7 days)
             
         Returns:
-            DataFrame if pandas available, list of tuples otherwise
+            List of tuples
         """
         SQL = f"""
             SELECT timestamp, device, status, users_active
