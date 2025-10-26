@@ -256,17 +256,12 @@ The monitor uses SQLite with:
 - **Views**: current_workstation_summary, unresolved_failures, workstation_reliability, software_summary, recent_failure_summary
 - **Triggers**: Auto-cleanup of old data, auto-resolve failures
 - **Config table**: Runtime configuration stored in database (keep_hours, cleanup_mode)
-
-**New Features:**
 - **User Tracking**: `workstation_status` table includes `active_users` (count) and `user_list` (up to 3 usernames)
 - **Timestamps**: All times displayed in local timezone (Eastern US) while stored as UTC
-- **Views Updated**: `current_workstation_summary` view includes user information
 
 Schema is automatically loaded from `nas_monitor_schema.sql`.
 
 ## Architecture
-
-Following the dfstat pattern:
 
 ```
 nas_monitor.py              # Main monitoring script
@@ -479,9 +474,6 @@ python3 nas_monitor.py --once
 ```bash
 # View monitor log
 tail -f /home/zeus/nas_workstation_monitor.log
-
-# View cron log (if using separate log)
-tail -f /home/zeus/nas_cron.log
 
 # Check for errors
 grep -i error /home/zeus/nas_workstation_monitor.log
