@@ -130,8 +130,7 @@ CREATE VIEW IF NOT EXISTS current_workstation_summary AS
         l.timestamp AS last_check,
         l.status,
         l.users_active,
-        w.is_online,
-        w.consecutive_failures
+        w.is_online
     FROM latest l
     LEFT JOIN workstation_status w ON l.workstation = w.workstation;
 
@@ -221,3 +220,4 @@ CREATE TRIGGER IF NOT EXISTS auto_resolve_failures
           AND mount_point = NEW.mount_point 
           AND resolved = 0;
     END;
+
