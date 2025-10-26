@@ -16,7 +16,7 @@ CREATE TABLE monitor_config (
 
 -- Default configuration
 INSERT INTO monitor_config (id, keep_hours, aggressive_cleanup)
-    VALUES (1, 72, 0);
+    VALUES (1, 168, 0);
 
 -- Main fact table: mount status checks
 CREATE TABLE IF NOT EXISTS workstation_mount_status (
