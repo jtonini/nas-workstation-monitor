@@ -282,10 +282,11 @@ def show_workstation_detail(workstation: str, hours: int = 24) -> None:
         if not detail:
             print(f"No records found for {workstation}")
         else:
-            print(f"{'Timestamp':<20} {'Mount Point':<25} {'Status':<10} {'Users':<6}")
-            print("-" * 70)
+            print(f"{'Timestamp':<20} {'Mount Point':<25} {'Status':<10} {'Users':<6} {'User List':<30}")
+            print("-" * 106)
             for row in detail:
-                print(f"{row[0]:<20} {row[1]:<25} {row[3]:<10} {row[4]:<6}")
+                user_list = row[5] if len(row) > 5 and row[5] else ''
+                print(f"{row[0]:<20} {row[1]:<25} {row[3]:<10} {row[4]:<6} {user_list:<30}")
     
     print()
 

@@ -379,14 +379,22 @@ class NASMonitorDB(SQLiteDB):
             hours: Hours of history to retrieve
             
         Returns:
-            List of tuples
+            List of tuples including user_list from workstation_status
         """
         SQL = f"""
-            SELECT timestamp, mount_point, device, status, users_active, action_taken
-            FROM workstation_mount_status
-            WHERE workstation = ?
-              AND timestamp >= datetime('now', '-{hours} hours')
-            ORDER BY timestamp DESC
+            SELECT 
+                m.timestamp, 
+                m.mount_point, 
+                m.device, 
+                m.status, 
+                m.users_active, 
+                w.user_list,
+                m.action_taken
+            FROM workstation_mount_status m
+            LEFT JOIN workstation_status w ON m.workstation = w.workstation
+            WHERE m.workstation = ?
+              AND m.timestamp >= datetime('now', '-{hours} hours')
+            ORDER BY m.timestamp DESC
         """
         return self.execute_SQL(SQL, workstation)
 
