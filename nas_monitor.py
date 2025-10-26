@@ -154,25 +154,29 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
         if line.startswith('mount.nfs:') or not line.strip():
             continue
             
-        # Look for mount status lines: "device on mountpoint status"
+        # Look for mount status lines: "mount_point : status"
         # Examples:
-        #   "141.166.186.35:/path on /usr/local/chem.sw already mounted"
-        #   "/dev/sda1 on /boot already mounted"
-        #   "none on /proc ignored"
-        if ' on ' in line and (':' in line or '/dev' in line or 'none' in line):
+        #   "/usr/local/chem.sw       : already mounted"
+        #   "/boot                    : already mounted"
+        #   "none                     : ignored"
+        if ' : ' in line:
             try:
-                # Split by ' on ' to get device and rest
-                parts = line.split(' on ', 1)
+                # Split by ' : ' to get mount_point and status
+                parts = line.split(' : ', 1)
                 if len(parts) == 2:
-                    device = parts[0].strip()
-                    rest = parts[1].strip()
+                    mount_point = parts[0].strip()
+                    status_text = parts[1].strip()
                     
-                    # Mount point is first word after 'on'
-                    rest_parts = rest.split()
-                    mount_point = rest_parts[0] if rest_parts else ''
+                    # Skip ignored mounts and root filesystem
+                    if 'ignored' in status_text.lower() or mount_point == '/':
+                        continue
+                    
+                    # Device will be empty - we'd need to parse 'mount' output to get it
+                    # For now, this is sufficient for mount status tracking
+                    device = ''
                     
                     # Determine status
-                    status = 'mounted' if 'already mounted' in line.lower() else 'newly_mounted'
+                    status = 'mounted' if 'already mounted' in status_text.lower() else 'newly_mounted'
                     
                     mount_info = {
                         'device': device,
@@ -621,4 +625,3 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(f"Escaped or re-raised exception: {e}")
-
