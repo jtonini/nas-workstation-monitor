@@ -119,19 +119,19 @@ class NASMonitorDB(SQLiteDB):
         (workstation, software_name, mount_point, is_accessible)
         VALUES (?, ?, ?, ?)"""
 
-    UPDATE_WORKSTATION_STATUS = """INSERT OR REPLACE INTO workstation_status 
-        (workstation, is_online, last_seen, last_successful_check, 
-         consecutive_failures, last_checked_by)
-        VALUES (?, ?, datetime('now'), 
-                CASE WHEN ? THEN datetime('now') 
-                     ELSE (SELECT last_successful_check FROM workstation_status 
-                           WHERE workstation = ?) 
-                END,
-                CASE WHEN ? THEN 0 
-                     ELSE (SELECT COALESCE(consecutive_failures, 0) + 1 
-                           FROM workstation_status WHERE workstation = ?) 
-                END,
-                ?)"""
+    UPDATE_WORKSTATION_STATUS = """
+    INSERT INTO workstation_status 
+        (workstation, is_online, last_seen, active_users, user_list, checked_by, slurm_job_id)
+    VALUES (?, ?, datetime('now'), ?, ?, ?, ?)
+    ON CONFLICT(workstation) DO UPDATE SET
+        is_online = excluded.is_online,
+        last_seen = excluded.last_seen,
+        active_users = excluded.active_users,
+        user_list = excluded.user_list,
+        checked_by = excluded.checked_by,
+        slurm_job_id = excluded.slurm_job_id
+    WHERE workstation = excluded.workstation;
+    """
 
     GET_CURRENT_STATUS = """SELECT * FROM current_workstation_summary 
         ORDER BY workstation"""
@@ -237,22 +237,31 @@ class NASMonitorDB(SQLiteDB):
 
     @trap
     def update_workstation_status(self, workstation: str, is_online: bool,
-                                  success: bool = True, checked_by: str = None) -> int:
+                                  success: bool = True, active_users: int = 0,
+                                  user_list: str = None, checked_by: str = None) -> int:
         """
         Update workstation status
+        
+        Args:
+            workstation: Hostname
+            is_online: Whether workstation is online
+            success: Whether mounts are successful
+            active_users: Number of active users
+            user_list: Comma-separated list of usernames (up to 3)
+            checked_by: Username of checker
         
         Returns:
             Number of rows affected
         """
         return self.execute_SQL(
             NASMonitorDB.UPDATE_WORKSTATION_STATUS,
-            workstation, int(is_online), int(success), workstation,
-            int(success), workstation, checked_by
+            workstation, int(is_online), active_users, user_list, checked_by,
+            os.getenv('SLURM_JOB_ID')
         )
 
 
     @trap
-    def get_current_status(self) -> Union['pandas.DataFrame', List]:
+    def get_current_status(self) -> Union[pandas.DataFrame, List]:
         """
         Get current status of all workstations
         
@@ -263,7 +272,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_unresolved_failures(self) -> Union['pandas.DataFrame', List]:
+    def get_unresolved_failures(self) -> Union[pandas.DataFrame, List]:
         """
         Get all unresolved mount failures
         
@@ -274,7 +283,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_recent_failures(self) -> Union['pandas.DataFrame', List]:
+    def get_recent_failures(self) -> Union[pandas.DataFrame, List]:
         """
         Get summary of recent failures (last 24 hours)
         
@@ -285,7 +294,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_reliability(self) -> Union['pandas.DataFrame', List]:
+    def get_reliability(self) -> Union[pandas.DataFrame, List]:
         """
         Get 7-day reliability statistics for all workstations
         
@@ -296,7 +305,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_software_summary(self) -> Union['pandas.DataFrame', List]:
+    def get_software_summary(self) -> Union[pandas.DataFrame, List]:
         """
         Get software availability summary (last 7 days)
         
@@ -361,7 +370,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_workstation_detail(self, workstation: str, hours: int = 24) -> Union['pandas.DataFrame', List]:
+    def get_workstation_detail(self, workstation: str, hours: int = 24) -> Union[pandas.DataFrame, List]:
         """
         Get detailed history for a specific workstation
         
@@ -383,7 +392,7 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def get_mount_history(self, workstation: str, mount_point: str, hours: int = 168) -> Union['pandas.DataFrame', List]:
+    def get_mount_history(self, workstation: str, mount_point: str, hours: int = 168) -> Union[pandas.DataFrame, List]:
         """
         Get history for a specific mount on a workstation
         

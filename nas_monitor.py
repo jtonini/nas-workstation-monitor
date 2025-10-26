@@ -270,21 +270,43 @@ def attempt_remount(workstation: str) -> Tuple[bool, str]:
 
 
 @trap
-def count_active_users(workstation: str) -> int:
-    """Count active users on workstation"""
+@trap
+def get_active_users(workstation: str) -> tuple:
+    """Get active user count and list of usernames on workstation
+    
+    Returns:
+        tuple: (user_count, user_list_string)
+            user_count: Number of active users
+            user_list_string: Comma-separated list of up to 3 usernames, 
+                             or None if no users
+    """
     global myconfig
     
-    cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'who | wc -l']
+    cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'who']
     result = dorunrun(cmd, timeout=10)
     exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
     if exit_code == 0:
-        try:
-            return int(stdout.strip())
-        except:
-            pass
-    return 0
-
+        users = set()
+        for line in stdout.splitlines():
+            parts = line.split()
+            if parts:
+                users.add(parts[0])
+        
+        user_count = len(users)
+        if user_count == 0:
+            return 0, None
+        
+        # Sort and limit to first 3 users
+        sorted_users = sorted(users)
+        if user_count <= 3:
+            user_list = ','.join(sorted_users)
+        else:
+            user_list = ','.join(sorted_users[:3]) + f',+{user_count-3}'
+        
+        return user_count, user_list
+    
+    return 0, None
 
 @trap
 def monitor_workstation(workstation_config: Dict) -> Dict:
@@ -327,6 +349,7 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
         'online': False,
         'mounts_ok': False,
         'active_users': 0,
+        'user_list': None,
         'mount_details': [],
         'software_issues': [],
         'actions_taken': []
@@ -335,14 +358,17 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
     # Check if workstation is online
     if not check_workstation_online(workstation):
         logger.warning(f"{workstation} is offline")
-        db.update_workstation_status(workstation, is_online=False, checked_by=mynetid)
+        db.update_workstation_status(workstation, is_online=False, active_users=0,
+                                             user_list=None, checked_by=mynetid)
         return report
     
     report['online'] = True
     
     # Count active users if configured
     if myconfig.track_users:
-        report['active_users'] = count_active_users(workstation)
+        report['active_users'], report['user_list'] = get_active_users(workstation)
+    else:
+        report['user_list'] = None
     
     # Get mount status
     success, mounts, error_msg = get_mount_status(workstation)
@@ -395,8 +421,11 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
                             f"Software not accessible on {workstation}: {software} at {mount_point}"
                         )
     
-    db.update_workstation_status(workstation, is_online=True, 
-                                 success=report['mounts_ok'], checked_by=mynetid)
+    db.update_workstation_status(workstation, is_online=True,
+                                         success=report['mounts_ok'],
+                                         active_users=report['active_users'],
+                                         user_list=report['user_list'],
+                                         checked_by=mynetid)
     
     return report
 
@@ -625,4 +654,3 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(f"Escaped or re-raised exception: {e}")
-

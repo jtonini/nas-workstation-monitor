@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS workstation_mount_status (
 
 -- Workstation current state
 CREATE TABLE IF NOT EXISTS workstation_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     workstation TEXT PRIMARY KEY,
     is_online INTEGER DEFAULT 1 CHECK (is_online IN (0, 1)),
     last_seen DATETIME,
@@ -44,6 +45,8 @@ CREATE TABLE IF NOT EXISTS workstation_status (
     consecutive_failures INTEGER DEFAULT 0,
     notes TEXT,
     last_checked_by TEXT
+    active_users INTEGER DEFAULT 0,
+    user_list TEXT DEFAULT NULL,
 ) WITHOUT ROWID;
 
 -- Mount failure tracking
