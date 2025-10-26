@@ -119,7 +119,7 @@ critical_software = [
 # Hours of history to keep in database (72 = 3 days)
 # This value is stored in the database config table and can be updated there
 ###
-keep_hours = 72
+keep_hours = 168
 
 ###
 # Aggressive cleanup mode removes ALL old data including unresolved issues
