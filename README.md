@@ -7,25 +7,21 @@ Automated monitoring and maintenance of NAS mounts across chemistry lab workstat
 - **Automated Monitoring**: Hourly checks of all workstation NAS mounts
 - **Auto-Remediation**: Automatic remounting attempts when issues detected
 - **Database Tracking**: SQLite with views, triggers, and proper locking
-- **Software Verification**: Checks critical software accessibility (Amber, Gaussian, etc.)
+- **Software Verification**: Checks critical software accessibility (Amber, Columbus, Gaussian)
 - **Email Notifications**: Alerts for persistent issues
 - **Query Tools**: Rich command-line interface for status and analysis
-- **HPC Integration**: Built on hpclib
+- **Utility Libraries**: Uses local copies of utility modules (SQLiteDB, dorunrun, urlogger, etc.)
 
 ## Quick Start
 
 ```bash
-# 1. Clone repository with submodules
-git clone --recurse-submodules https://github.com/jtonini/nas-workstation-monitor.git
+# 1. Clone repository
+git clone https://github.com/jtonini/nas-workstation-monitor.git
 cd nas-workstation-monitor
-
-# If you already cloned without submodules:
-git submodule init
-git submodule update
 
 # 2. Edit configuration
 vi nas_monitor.toml
-# Update: notification_addresses, workstations list
+# Update: notification_addresses, workstations list, critical_software
 
 # 3. Test with one workstation
 python3 nas_monitor.py --once --verbose
@@ -36,7 +32,7 @@ source ~/.bashrc
 
 # 5. Deploy to cron
 crontab -e
-# Add: 0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py
+# Add: 0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_workstation_monitor.log 2>&1
 ```
 
 ## Usage
@@ -148,6 +144,9 @@ time_interval = 3600  # 1 hour
 attempt_fix = true
 send_notifications = true
 
+# Data retention (7 days)
+keep_hours = 168
+
 # Workstations to monitor
 workstations = [
     {host = 'adam', mounts = ['/usr/local/chem.sw']},
@@ -157,7 +156,7 @@ workstations = [
 
 # Critical software to verify
 critical_software = [
-    {mount = '/usr/local/chem.sw', software = ['amber', 'gaussian']}
+    {mount = '/usr/local/chem.sw', software = ['amber', 'Columbus', 'gaussian']}
 ]
 ```
 
@@ -166,10 +165,10 @@ See `nas_monitor.toml` for all options.
 ## Database Schema
 
 The monitor uses SQLite with:
-- **Tables**: workstation_mount_status, workstation_status, mount_failures, software_availability
-- **Views**: current_workstation_summary, unresolved_failures, workstation_reliability, software_summary
+- **Tables**: workstation_mount_status, workstation_status, mount_failures, software_availability, monitor_config
+- **Views**: current_workstation_summary, unresolved_failures, workstation_reliability, software_summary, recent_failure_summary
 - **Triggers**: Auto-cleanup of old data, auto-resolve failures
-- **Config table**: Runtime configuration stored in database
+- **Config table**: Runtime configuration stored in database (keep_hours, cleanup_mode)
 
 Schema is automatically loaded from `nas_monitor_schema.sql`.
 
@@ -178,11 +177,11 @@ Schema is automatically loaded from `nas_monitor_schema.sql`.
 Following the dfstat pattern:
 
 ```
-nas_monitor.py              # Main daemon (like dfstat.py)
-├── nas_monitor_dbclass.py  # Database class (like dfdata.py)
+nas_monitor.py              # Main monitoring script
+├── nas_monitor_dbclass.py  # Database class
 ├── nas_monitor_schema.sql  # SQL schema with views/triggers
 ├── nas_monitor.toml        # TOML configuration
-└── hpclib/                 # Git submodule
+└── Utility modules:
     ├── sqlitedb.py         # Base SQLite class
     ├── dorunrun.py         # Command execution
     ├── urdecorators.py     # @trap decorator
@@ -193,36 +192,74 @@ nas_monitor.py              # Main daemon (like dfstat.py)
 Query tool:
 ```
 nas_query.py               # Query interface
-└── nas_monitor_dbclass.py # Uses same DB class
+├── nas_monitor_dbclass.py # Uses same DB class
+└── nas_functions.sh       # Bash wrapper functions
 ```
 
 ## Files
 
 **Core Scripts:**
 - `nas_monitor.py` - Main monitoring daemon
-- `nas_monitor_dbclass.py` - Database class
+- `nas_monitor_dbclass.py` - Database class (inherits from SQLiteDB)
 - `nas_query.py` - Query and reporting tool
 
+**Utility Modules:**
+- `sqlitedb.py` - Base SQLite database class
+- `dorunrun.py` - Safe command execution wrapper
+- `urdecorators.py` - Exception handling decorators
+- `urlogger.py` - Logging utilities
+- `linuxutils.py` - Linux system utilities
+
 **Database:**
-- `nas_monitor_schema.sql` - Database schema with views/triggers
+- `nas_monitor_schema.sql` - Database schema with views and triggers
 
 **Configuration:**
 - `nas_monitor.toml` - Main configuration file
 - `nas_functions.sh` - Bash helper functions
 
-**HPC Library (git submodule):**
-- `hpclib/` - Git submodule pointing to [hpclib](https://github.com/georgeflanagin/hpclib)
-  - Automatically pulls latest versions
-  - Run `git submodule update --remote` to update
-
 ## Requirements
 
-- Python 3.8+
-- SSH access to all workstations with key-based auth
-- SQLite3
-- Standard Python libraries (no pip installs required)
+- Python 3.9+
+- SSH access to all workstations with key-based authentication
+- SQLite3 (command-line tool for manual queries)
+- Standard Python libraries:
+  - `tomli` or `tomllib` (for TOML config parsing)
+  - All other dependencies are Python standard library
+
+### Installing Python Dependencies
+
+```bash
+# For Python 3.9-3.10 (tomllib not in stdlib yet)
+pip install tomli --break-system-packages
+
+# Python 3.11+ has tomllib built-in (no install needed)
+```
 
 ## Deployment
+
+### Initial Setup
+
+```bash
+# 1. Clone to monitoring host (e.g., jonimitchell)
+git clone https://github.com/jtonini/nas-workstation-monitor.git
+cd nas-workstation-monitor
+
+# 2. Configure SSH keys for passwordless access
+ssh-keygen -t ed25519 -C "monitoring@jonimitchell"
+for host in adam sarah cooper evan; do
+    ssh-copy-id $host
+done
+
+# 3. Edit configuration
+vi nas_monitor.toml
+# Update workstations list, notification emails, paths
+
+# 4. Test monitoring
+python3 nas_monitor.py --once --verbose
+
+# 5. Check database was created
+ls -lh ~/nas_workstation_monitor.db
+```
 
 ### Cron Setup
 
@@ -231,21 +268,35 @@ nas_query.py               # Query interface
 crontab -e
 
 # Add hourly monitoring
-0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_cron.log 2>&1
+0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_workstation_monitor.log 2>&1
+
+# Or every 15 minutes for more frequent checks
+*/15 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_workstation_monitor.log 2>&1
 ```
 
-### Testing
+### Bash Functions Setup
 
 ```bash
-# Test with single workstation
-python3 nas_monitor.py --once --verbose
+# Add to your .bashrc
+echo 'source ~/nas-workstation-monitor/nas_functions.sh' >> ~/.bashrc
+source ~/.bashrc
 
-# Test without notifications
-python3 nas_monitor.py --once --no-notifications
-
-# Check database
-python3 nas_query.py status
+# Test the functions
+nas_status
+nas_reliability
 ```
+
+## Monitoring
+
+The system will:
+- Check all configured workstations every hour (or per cron schedule)
+- Verify NAS mounts are accessible
+- Check critical software packages are available
+- Attempt automatic remount if issues detected
+- Track all checks in SQLite database
+- Keep 7 days (168 hours) of history by default
+- Auto-cleanup old records to prevent database growth
+- Send email alerts for persistent issues
 
 ## Troubleshooting
 
@@ -253,17 +304,11 @@ python3 nas_query.py status
 
 **"No module named 'tomli'"**
 ```bash
+# Python 3.9-3.10 needs tomli package
 pip install tomli --break-system-packages
-```
 
-**"No module named 'hpclib' or 'sqlitedb'"**
-```bash
-# Initialize submodules if not already done
-git submodule init
-git submodule update
-
-# Or if hpclib folder is empty
-git submodule update --init --recursive
+# Or use system package manager
+sudo dnf install python3-tomli
 ```
 
 **"Config file not found"**
@@ -275,17 +320,33 @@ python3 nas_monitor.py --config /home/zeus/nas-workstation-monitor/nas_monitor.t
 **"Permission denied" on SSH**
 ```bash
 # Verify SSH key access
-ssh adam 'mount -av'
+ssh adam echo "test"
+
+# If fails, copy SSH key
+ssh-copy-id adam
 ```
 
-### Updating hpclib
-
+**Database Shows No Records**
 ```bash
-# Update to latest hpclib version
-cd nas-workstation-monitor
-git submodule update --remote hpclib
-git add hpclib
-git commit -m "Update hpclib submodule"
+# Check if database was created
+ls -lh ~/nas_workstation_monitor.db
+
+# Run monitor once to populate
+python3 nas_monitor.py --once --verbose
+
+# Check record counts
+sqlite3 ~/nas_workstation_monitor.db "SELECT COUNT(*) FROM workstation_mount_status;"
+```
+
+**Workstation Shows Offline But Is Online**
+```bash
+# Check if ICMP is blocked (ping fails but SSH works)
+ping -c 1 workstation
+ssh workstation echo "test"
+
+# If ping blocked, allow ICMP from monitoring host on target workstation:
+ssh workstation "sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=<monitoring_host_IP> accept'"
+ssh workstation "sudo firewall-cmd --reload"
 ```
 
 ### Logs
@@ -294,14 +355,36 @@ git commit -m "Update hpclib submodule"
 # View monitor log
 tail -f /home/zeus/nas_workstation_monitor.log
 
-# View cron log
+# View cron log (if using separate log)
 tail -f /home/zeus/nas_cron.log
+
+# Check for errors
+grep -i error /home/zeus/nas_workstation_monitor.log
+
+# View recent monitoring runs
+tail -100 /home/zeus/nas_workstation_monitor.log
+```
+
+### Database Queries
+
+```bash
+# Check database configuration
+sqlite3 ~/nas_workstation_monitor.db "SELECT * FROM monitor_config;"
+
+# View recent mount checks
+sqlite3 ~/nas_workstation_monitor.db "SELECT * FROM workstation_mount_status ORDER BY timestamp DESC LIMIT 20;"
+
+# Check workstation reliability
+sqlite3 ~/nas_workstation_monitor.db "SELECT * FROM workstation_reliability;"
+
+# View all tables and views
+sqlite3 ~/nas_workstation_monitor.db ".tables"
 ```
 
 ## Credits
 
 - Pattern based on [newdfstat](https://github.com/georgeflanagin/newdfstat) by George Flanagin
-- HPC library from [hpclib](https://github.com/georgeflanagin/hpclib) by George Flanagin
+- Utility modules adapted from [hpclib](https://github.com/georgeflanagin/hpclib) by George Flanagin
 - University of Richmond HPC Team
 
 ## License
@@ -312,4 +395,4 @@ MIT License - See LICENSE file for details
 
 For issues or questions:
 - Email: hpc@richmond.edu
-- Create an issue on GitHub
+- Create an issue on GitHub: https://github.com/jtonini/nas-workstation-monitor/issues
