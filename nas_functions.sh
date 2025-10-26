@@ -19,6 +19,7 @@
 #   nas_failures             # Show unresolved failures
 #   nas_reliability          # Show 7-day reliability stats
 #   nas_detail adam          # Show detailed history for 'adam'
+#   nas_dbcheck              # Check database health
 #
 # NOTES:
 #   - All functions use Python scripts in /home/zeus/nas-monitor/
@@ -48,40 +49,28 @@ NAS_MONITOR_DIR="/home/zeus/nas-workstation-monitor"
 #
 # EXAMPLES:
 #   nas_monitor                    # Quick check
-#   nas_monitor --verbose          # See what's happening
-#   nas_monitor --config test.toml # Use test configuration
+#   nas_monitor --verbose          # Detailed output
 ################################################################################
 function nas_monitor() {
-    python3 "${NAS_MONITOR_DIR}/nas_monitor.py" --once "$@"
+    cd "$NAS_MONITOR_DIR" && python3 nas_monitor.py --once "$@"
 }
 
 ################################################################################
-# nas_query - Query monitoring database
+# nas_query - Generic query function (internal)
 #
-# Generic query function that accepts any query command.
-# Prefer using specific functions (nas_status, nas_failures, etc.) for
-# common operations.
+# Base function called by other query functions. This executes nas_query.py
+# with the specified query type.
 #
 # USAGE:
-#   nas_query <command> [options]
+#   nas_query <query_type> [args]
 #
-# COMMANDS:
-#   status        Current workstation status
-#   failures      Unresolved mount failures
-#   recent        Recent failures (24 hours)
-#   reliability   7-day reliability statistics
-#   software      Software availability summary
-#   detail        Detailed workstation history
-#   config        Show database configuration
-#   cleanup       Clean up old records
-#
-# EXAMPLES:
-#   nas_query status
-#   nas_query detail --workstation adam --hours 48
-#   nas_query cleanup --confirm
+# ARGUMENTS:
+#   query_type    One of: status, failures, recent, reliability, 
+#                 software, detail, config
+#   args          Additional arguments passed to nas_query.py
 ################################################################################
 function nas_query() {
-    python3 "${NAS_MONITOR_DIR}/nas_query.py" "$@"
+    cd "$NAS_MONITOR_DIR" && python3 nas_query.py "$@"
 }
 
 ################################################################################
@@ -117,25 +106,26 @@ function nas_status() {
 ################################################################################
 # nas_failures - Show unresolved mount failures
 #
-# Lists all workstations with ongoing mount problems that haven't been
-# resolved. This is useful for identifying persistent issues that need
-# manual intervention.
+# Lists all workstations currently experiencing mount problems.
+# This helps identify which systems need immediate attention.
 #
 # OUTPUT:
 #   Table showing:
-#   - Workstation name
-#   - Mount point
-#   - When failure first occurred
+#   - Workstation with failure
+#   - Mount point that failed
+#   - When failure was first detected
 #   - Number of consecutive failures
-#   - Days failing
 #
 # USAGE:
 #   nas_failures
 #
-# NOTES:
-#   - Failures are auto-resolved when mount succeeds
-#   - "Days failing" indicates problem duration
-#   - High failure count suggests systematic issue
+# EXAMPLE OUTPUT:
+#   ======================================================================
+#   UNRESOLVED MOUNT FAILURES
+#   ======================================================================
+#   Workstation     Mount                     First Failed     Failures
+#   ----------------------------------------------------------------------
+#   cooper          /usr/local/chem.sw        2025-01-15       3
 ################################################################################
 function nas_failures() {
     nas_query failures
@@ -144,33 +134,46 @@ function nas_failures() {
 ################################################################################
 # nas_reliability - Show 7-day reliability statistics
 #
-# Displays success rate for each workstation over the past week.
-# Helps identify chronically problematic systems or trending issues.
+# Calculates and displays uptime percentages for each workstation over the
+# past week. Helps identify chronically problematic systems.
 #
 # OUTPUT:
 #   Table showing:
 #   - Workstation name
-#   - Total checks performed
+#   - Total monitoring checks performed
 #   - Successful checks
-#   - Success rate percentage
+#   - Success rate (percentage)
 #
 # USAGE:
 #   nas_reliability
 #
-# INTERPRETATION:
-#   100%    = Perfect, no issues
-#   95-99%  = Minor intermittent problems
-#   90-95%  = Significant issues, investigate
-#   <90%    = Critical problems, immediate attention needed
-#
 # EXAMPLE OUTPUT:
-#   Workstation     Total Checks   Successful    Success Rate
-#   --------------------------------------------------------------
-#   adam            168            168           100.0%
-#   sarah           168            165           98.2%
+#   ======================================================================
+#   WORKSTATION RELIABILITY (7 Days)
+#   ======================================================================
+#   Workstation     Total Checks  Successful   Success Rate
+#   ----------------------------------------------------------------------
+#   adam            168           168          100.0%
+#   sarah           168           165          98.2%
 ################################################################################
 function nas_reliability() {
     nas_query reliability
+}
+
+################################################################################
+# nas_software - Show software availability
+#
+# Displays the accessibility status of critical software packages
+# (e.g., Gaussian, ORCA) on each workstation.
+#
+# OUTPUT:
+#   Table showing which software packages are accessible on which mounts
+#
+# USAGE:
+#   nas_software
+################################################################################
+function nas_software() {
+    nas_query software
 }
 
 ################################################################################
@@ -190,62 +193,29 @@ function nas_reliability() {
 #   Chronological table showing:
 #   - Timestamp of each check
 #   - Mount point checked
-#   - Status result
-#   - Number of active users
-#   - Actions taken (remounts, etc.)
+#   - Status (mounted/failed)
+#   - Action taken (if any)
 #
 # EXAMPLES:
-#   nas_detail adam           # Last 24 hours for adam
-#   nas_detail sarah 48       # Last 48 hours for sarah
-#   nas_detail michael 168    # Last week for michael
-#
-# NOTES:
-#   - Useful for troubleshooting specific workstation problems
-#   - Shows pattern of failures and recoveries
-#   - Can reveal timing patterns (e.g., failures at specific times)
+#   nas_detail adam           # Last 24 hours
+#   nas_detail sarah 48       # Last 48 hours
+#   nas_detail cooper 168     # Last week
 ################################################################################
 function nas_detail() {
-    # Validate arguments
-    if [ -z "$1" ]; then
-        echo "ERROR: Workstation name required"
-        echo ""
-        echo "USAGE:"
-        echo "  nas_detail <workstation> [hours]"
-        echo ""
-        echo "EXAMPLES:"
-        echo "  nas_detail adam           # Last 24 hours"
-        echo "  nas_detail sarah 48       # Last 48 hours"
-        echo ""
+    local workstation="$1"
+    local hours="${2:-24}"
+    
+    if [ -z "$workstation" ]; then
+        echo "Usage: nas_detail <workstation> [hours]"
+        echo "Example: nas_detail adam 48"
         return 1
     fi
-    
-    local workstation="$1"
-    local hours="${2:-24}"  # Default to 24 hours if not specified
     
     nas_query detail --workstation "$workstation" --hours "$hours"
 }
 
 ################################################################################
-# ADDITIONAL HELPER FUNCTIONS
-#
-# The following functions provide shortcuts for other common operations.
-################################################################################
-
-################################################################################
-# nas_software - Show software availability summary
-#
-# Displays 7-day availability statistics for critical software packages
-# (Gaussian, ORCA, Lumerical, etc.) across all workstations.
-#
-# USAGE:
-#   nas_software
-################################################################################
-function nas_software() {
-    nas_query software
-}
-
-################################################################################
-# nas_recent - Show recent failures (last 24 hours)
+# nas_recent - Show recent failures (24 hours)
 #
 # Quick summary of which workstations had problems in the last day.
 # Faster than full failure list, focuses on immediate issues.
@@ -272,46 +242,10 @@ function nas_config() {
 }
 
 ################################################################################
-# nas_help - Show available functions
-#
-# Displays this help information
-#
-# USAGE:
-#   nas_help
-################################################################################
-function nas_help() {
-    echo "========================================================================"
-    echo "NAS Monitor Shell Functions - Help"
-    echo "========================================================================"
-    echo ""
-    echo "COMMON COMMANDS:"
-    echo "  nas_monitor              Run monitoring check once"
-    echo "  nas_status               Show current status of all workstations"
-    echo "  nas_failures             Show unresolved mount failures"
-    echo "  nas_reliability          Show 7-day reliability statistics"
-    echo "  nas_detail <host>        Show detailed history for a workstation"
-    echo ""
-    echo "ADDITIONAL COMMANDS:"
-    echo "  nas_software             Show software availability"
-    echo "  nas_recent               Show recent failures (24 hours)"
-    echo "  nas_config               Show database configuration"
-    echo "  nas_help                 Show this help message"
-    echo ""
-    echo "GETTING MORE HELP:"
-    echo "  nas_monitor --help       Full monitoring options"
-    echo "  nas_query --help         Full query options"
-    echo ""
-    echo "EXAMPLES:"
-    echo "  nas_status               # Quick health check"
-    echo "  nas_detail adam 48       # Last 48 hours for adam"
-    echo "  nas_monitor --verbose    # Run check with detailed output"
-    echo ""
-}
-
-################################################################################
 # nas_dbcheck - Database health and configuration checks
 #
-# Provides quick diagnostic checks of the database status
+# Provides quick diagnostic checks of the database status.
+# All timestamps are displayed in local time (Eastern US).
 #
 # USAGE:
 #   nas_dbcheck [check_type]
@@ -344,7 +278,7 @@ function nas_dbcheck() {
 SELECT 
     id,
     keep_hours || ' hours (' || ROUND(keep_hours/24.0, 1) || ' days)' as retention,
-    CASE cleanup_mode 
+    CASE aggressive_cleanup 
         WHEN 0 THEN 'Auto'
         WHEN 1 THEN 'Aggressive'
         ELSE 'Unknown'
@@ -362,13 +296,13 @@ SQL
 .headers on
 SELECT 
     'Oldest mount record' as record_type,
-    MIN(timestamp) as timestamp,
+    datetime(MIN(timestamp), 'localtime') as timestamp,
     ROUND((JULIANDAY('now') - JULIANDAY(MIN(timestamp))) * 24, 1) || ' hours' as age
 FROM workstation_mount_status
 UNION ALL
 SELECT 
     'Newest mount record',
-    MAX(timestamp),
+    datetime(MAX(timestamp), 'localtime'),
     ROUND((JULIANDAY('now') - JULIANDAY(MAX(timestamp))) * 24, 1) || ' hours'
 FROM workstation_mount_status
 UNION ALL
@@ -410,7 +344,7 @@ SQL
 .mode list
 SELECT '  Retention: ' || keep_hours || ' hours (' || ROUND(keep_hours/24.0, 1) || ' days)' FROM monitor_config
 UNION ALL
-SELECT '  Cleanup: ' || CASE cleanup_mode WHEN 0 THEN 'Auto' WHEN 1 THEN 'Aggressive' ELSE 'Unknown' END FROM monitor_config;
+SELECT '  Cleanup: ' || CASE aggressive_cleanup WHEN 0 THEN 'Auto' WHEN 1 THEN 'Aggressive' ELSE 'Unknown' END FROM monitor_config;
 SQL
             echo ""
             echo "Record Counts:"
@@ -425,12 +359,12 @@ UNION ALL
 SELECT '  Failures: ' || COUNT(*) FROM mount_failures;
 SQL
             echo ""
-            echo "Data Age:"
+            echo "Data Age (Local Time):"
             sqlite3 "$db" <<'SQL'
 .mode list
-SELECT '  Oldest: ' || MIN(timestamp) || ' (' || ROUND((JULIANDAY('now') - JULIANDAY(MIN(timestamp))) * 24, 1) || ' hours old)' FROM workstation_mount_status
+SELECT '  Oldest: ' || datetime(MIN(timestamp), 'localtime') || ' (' || ROUND((JULIANDAY('now') - JULIANDAY(MIN(timestamp))) * 24, 1) || ' hours old)' FROM workstation_mount_status
 UNION ALL
-SELECT '  Newest: ' || MAX(timestamp) || ' (' || ROUND((JULIANDAY('now') - JULIANDAY(MAX(timestamp))) * 24, 1) || ' hours old)' FROM workstation_mount_status;
+SELECT '  Newest: ' || datetime(MAX(timestamp), 'localtime') || ' (' || ROUND((JULIANDAY('now') - JULIANDAY(MAX(timestamp))) * 24, 1) || ' hours old)' FROM workstation_mount_status;
 SQL
             echo ""
             echo "Database File:"
@@ -451,6 +385,52 @@ SQL
             return 1
             ;;
     esac
+}
+
+################################################################################
+# nas_help - Show available functions
+#
+# Displays this help information
+#
+# USAGE:
+#   nas_help
+################################################################################
+function nas_help() {
+    echo "========================================================================"
+    echo "NAS Monitor Shell Functions - Help"
+    echo "========================================================================"
+    echo ""
+    echo "COMMON COMMANDS:"
+    echo "  nas_monitor              Run monitoring check once"
+    echo "  nas_status               Show current status of all workstations"
+    echo "  nas_failures             Show unresolved mount failures"
+    echo "  nas_reliability          Show 7-day reliability statistics"
+    echo "  nas_detail <host>        Show detailed history for a workstation"
+    echo "  nas_dbcheck [type]       Database health and diagnostics"
+    echo ""
+    echo "ADDITIONAL COMMANDS:"
+    echo "  nas_software             Show software availability"
+    echo "  nas_recent               Show recent failures (24 hours)"
+    echo "  nas_config               Show database configuration"
+    echo "  nas_help                 Show this help message"
+    echo ""
+    echo "DATABASE CHECKS:"
+    echo "  nas_dbcheck              Quick health check (default)"
+    echo "  nas_dbcheck config       Show configuration"
+    echo "  nas_dbcheck retention    Check data retention status"
+    echo "  nas_dbcheck records      Show record counts"
+    echo "  nas_dbcheck all          Run all diagnostics"
+    echo ""
+    echo "GETTING MORE HELP:"
+    echo "  nas_monitor --help       Full monitoring options"
+    echo "  nas_query --help         Full query options"
+    echo ""
+    echo "EXAMPLES:"
+    echo "  nas_status               # Quick health check"
+    echo "  nas_detail adam 48       # Last 48 hours for adam"
+    echo "  nas_monitor --verbose    # Run check with detailed output"
+    echo "  nas_dbcheck retention    # Check data cleanup status"
+    echo ""
 }
 
 # Print helpful message when sourced
