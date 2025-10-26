@@ -147,10 +147,11 @@ def show_status() -> None:
     if use_pandas and isinstance(status, pandas.DataFrame):
         print(status.to_string(index=False))
     else:
-        print(f"{'Workstation':<15} {'Mount':<25} {'Status':<10} {'Online':<8} {'Users':<6}")
-        print("-" * 70)
+        print(f"{'Workstation':<15} {'Mount':<25} {'Status':<10} {'Online':<8} {'Users':<6} {'User List':<30}")
+        print("-" * 106)
         for row in status:
-            print(f"{row[0]:<15} {row[1]:<25} {row[3]:<10} {row[5]:<8} {row[4]:<6}")
+            user_list = row[6] if len(row) > 6 and row[6] else ''
+            print(f"{row[0]:<15} {row[1]:<25} {row[3]:<10} {row[5]:<8} {row[4]:<6} {user_list:<30}")
     
     print()
 
