@@ -30,9 +30,6 @@ import signal
 import socket
 import time
 from pathlib import Path
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import smtplib
 
 ###
 # Installed libraries (TOML parser)
@@ -648,21 +645,35 @@ def generate_report(results: List[Dict]) -> str:
 
 @trap
 def send_email_notification(subject: str, body: str) -> None:
-    """Send email notification"""
+    """Send email notification using system mail command"""
     global myconfig, logger
     
     try:
-        msg = MIMEMultipart()
-        msg['From'] = myconfig.notification_source
-        msg['To'] = ', '.join(myconfig.notification_addresses)
-        msg['Subject'] = subject
+        import subprocess
         
-        msg.attach(MIMEText(body, 'plain'))
+        # Use system mail command (works with sendmail/postfix)
+        recipients = ','.join(myconfig.notification_addresses)
         
-        with smtplib.SMTP(myconfig.smtp_server, myconfig.smtp_port) as server:
-            server.send_message(msg)
+        # Create mail command
+        cmd = ['mail', '-s', subject]
+        if hasattr(myconfig, 'notification_source') and myconfig.notification_source:
+            cmd.extend(['-r', myconfig.notification_source])
+        cmd.append(recipients)
         
-        logger.info(f"Email notification sent: {subject}")
+        # Send email using subprocess with stdin
+        result = subprocess.run(
+            cmd,
+            input=body.encode('utf-8'),
+            capture_output=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            logger.info(f"Email notification sent: {subject} to {recipients}")
+        else:
+            stderr = result.stderr.decode('utf-8', errors='ignore')
+            logger.error(f"Failed to send email: {stderr}")
+            
     except Exception as e:
         logger.error(f"Failed to send email: {e}")
 
@@ -784,6 +795,15 @@ if __name__ == '__main__':
             results = monitor_all_workstations()
             report = generate_report(results)
             print(report)
+            
+            # Send notifications if configured and issues found
+            if myconfig.send_notifications:
+                issues = sum(1 for r in results if not r['mounts_ok'] or r['software_issues'])
+                if issues > 0:
+                    subject = f"NAS Mount Issues on {issues} Workstation(s)"
+                    send_email_notification(subject, report)
+                    logger.info(f"Email notification sent for {issues} workstation(s) with issues")
+            
             sys.exit(os.EX_OK)
         else:
             # Run in daemon mode
