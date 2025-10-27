@@ -3,14 +3,14 @@
 
 
 -- Configuration table (like konstants in newdfstat)
-CREATE TABLE monitor_config (
+CREATE TABLE IF NOT EXISTS monitor_config (
     id INTEGER PRIMARY KEY CHECK (id=1),
     keep_hours INTEGER NOT NULL CHECK (keep_hours BETWEEN 1 AND 720),
     aggressive_cleanup INTEGER NOT NULL CHECK (aggressive_cleanup IN (0, 1))
 ) WITHOUT ROWID;
 
 -- Default configuration
-INSERT INTO monitor_config (id, keep_hours, aggressive_cleanup)
+INSERT OR IGNORE INTO monitor_config (id, keep_hours, aggressive_cleanup)
     VALUES (1, 168, 0);
 
 -- Main fact table: mount status checks
@@ -216,3 +216,4 @@ CREATE TRIGGER IF NOT EXISTS auto_resolve_failures
           AND mount_point = NEW.mount_point 
           AND resolved = 0;
     END;
+
