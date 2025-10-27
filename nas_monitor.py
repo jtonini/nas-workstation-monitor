@@ -147,11 +147,34 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
     exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
-    # Parse mount output - only lines that are actual mount status reports
+    # Parse mount output - get both regular output and errors
     mounts = []
+    
+    # First, check stderr for mount.nfs errors
+    for line in stderr.splitlines():
+        if line.startswith('mount.nfs:'):
+            if 'does not exist' in line:
+                # Extract mount point from error message
+                # "mount.nfs: mount point /franksinatra/logP does not exist"
+                parts = line.split('mount point')
+                if len(parts) > 1:
+                    mount_point = parts[1].split('does not exist')[0].strip()
+                    mount_info = {
+                        'device': '',
+                        'mount_point': mount_point,
+                        'status': 'directory_missing'
+                    }
+                    mounts.append(mount_info)
+                    logger.warning(f"Mount point missing: {mount_point}")
+            elif 'Connection timed out' in line or 'Connection refused' in line or 'access denied' in line.lower():
+                # Log NFS connection errors but without specific mount point
+                # These will be caught by the regular parsing if mount point is in output
+                logger.error(f"NFS mount error: {line}")
+    
+    # Parse regular stdout output
     for line in stdout.splitlines():
-        # Skip diagnostic/error lines from mount.nfs
-        if line.startswith('mount.nfs:') or not line.strip():
+        # Skip empty lines
+        if not line.strip():
             continue
             
         # Look for mount status lines: "mount_point : status"
@@ -175,8 +198,17 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
                     # For now, this is sufficient for mount status tracking
                     device = ''
                     
-                    # Determine status
-                    status = 'mounted' if 'already mounted' in status_text.lower() else 'newly_mounted'
+                    # Determine status from mount -av output
+                    if 'already mounted' in status_text.lower():
+                        status = 'mounted'
+                    elif 'successfully mounted' in status_text.lower() or 'mounted' in status_text.lower():
+                        status = 'newly_mounted'
+                    elif 'failed' in status_text.lower() or 'error' in status_text.lower():
+                        status = 'failed'
+                    elif 'not mounted' in status_text.lower():
+                        status = 'not_mounted'
+                    else:
+                        status = 'unknown'
                     
                     mount_info = {
                         'device': device,
@@ -201,6 +233,56 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
 
 
 @trap
+
+@trap
+def check_mount_point_directories(workstation: str, expected_mounts: List[str]) -> Dict[str, str]:
+    """
+    Check if mount point directories exist on workstation
+    
+    Args:
+        workstation: Hostname
+        expected_mounts: List of mount point paths that should exist
+        
+    Returns:
+        Dict mapping mount_point to status:
+            'exists' - directory exists
+            'missing' - directory does not exist
+            'error' - could not check
+    """
+    global myconfig, logger
+    
+    if not expected_mounts:
+        return {}
+    
+    # Build command to check all mount points in one SSH call
+    check_cmds = []
+    for mp in expected_mounts:
+        # Escape single quotes in mount point path
+        safe_mp = mp.replace("'", "'\\''")
+        check_cmds.append(f"test -d '{safe_mp}' && echo '{safe_mp}:EXISTS' || echo '{safe_mp}:MISSING'")
+    
+    cmd_str = ' ; '.join(check_cmds)
+    cmd = ['ssh'] + myconfig.ssh_options + [workstation, cmd_str]
+    result = dorunrun(cmd, timeout=10)
+    
+    status_map = {}
+    if result.get('code') == 0:
+        for line in result.get('stdout', '').splitlines():
+            if ':EXISTS' in line:
+                mp = line.replace(':EXISTS', '').strip()
+                status_map[mp] = 'exists'
+            elif ':MISSING' in line:
+                mp = line.replace(':MISSING', '').strip()
+                status_map[mp] = 'missing'
+                logger.warning(f"{workstation}: Mount point directory missing: {mp}")
+    else:
+        logger.error(f"{workstation}: Failed to check mount point directories")
+        for mp in expected_mounts:
+            status_map[mp] = 'error'
+    
+    return status_map
+
+
 def verify_software_access(workstation: str, mount_point: str, 
                            software_list: List[str]) -> Dict[str, bool]:
     """
