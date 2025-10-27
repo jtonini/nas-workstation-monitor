@@ -147,11 +147,20 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
     exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
+    # Debug logging
+    logger.debug(f"{workstation}: mount -av exit code: {exit_code}")
+    if stderr:
+        logger.info(f"{workstation}: mount -av stderr: {stderr}")
+    logger.debug(f"{workstation}: mount -av stdout lines: {len(stdout.splitlines())}")
+    
     # Parse mount output - get both regular output and errors
     mounts = []
     
     # First, check stderr for mount.nfs errors
+    if stderr:
+        logger.debug(f"{workstation}: Processing {len(stderr.splitlines())} stderr lines")
     for line in stderr.splitlines():
+        logger.debug(f"{workstation}: stderr line: {line}")
         if line.startswith('mount.nfs:'):
             if 'does not exist' in line:
                 # Extract mount point from error message
