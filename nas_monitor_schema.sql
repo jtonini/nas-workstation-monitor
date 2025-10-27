@@ -1,11 +1,6 @@
 -- NAS Workstation Monitor Database Schema
 -- Following newdfstat pattern with views, triggers, and constraints
 
-DROP TABLE IF EXISTS workstation_mount_status;
-DROP TABLE IF EXISTS workstation_status;
-DROP TABLE IF EXISTS mount_failures;
-DROP TABLE IF EXISTS software_availability;
-DROP TABLE IF EXISTS monitor_config;
 
 -- Configuration table (like konstants in newdfstat)
 CREATE TABLE monitor_config (
