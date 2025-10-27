@@ -217,3 +217,18 @@ CREATE TRIGGER IF NOT EXISTS auto_resolve_failures
           AND resolved = 0;
     END;
 
+-- Trigger: Track mount failures automatically
+CREATE TRIGGER IF NOT EXISTS track_mount_failures
+    AFTER INSERT ON workstation_mount_status
+    WHEN NEW.status NOT IN ('mounted', 'newly_mounted')
+    BEGIN
+        INSERT INTO mount_failures (workstation, mount_point, first_failure, last_failure, failure_count, resolved)
+        VALUES (NEW.workstation, NEW.mount_point, NEW.timestamp, NEW.timestamp, 1, 0)
+        ON CONFLICT(workstation, mount_point, resolved) 
+        DO UPDATE SET 
+            last_failure = NEW.timestamp,
+            failure_count = failure_count + 1
+        WHERE resolved = 0;
+    END;
+
+
