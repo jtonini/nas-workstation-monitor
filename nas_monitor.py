@@ -752,9 +752,9 @@ def nas_monitor_main(myargs: argparse.Namespace = None) -> int:
             
             # Send notifications if configured and issues found
             if myconfig.send_notifications:
-                issues = sum(1 for r in results if not r['mounts_ok'] or r['software_issues'])
+                issues = sum(1 for r in results if not r['online'] or not r['mounts_ok'] or r['software_issues'])
                 if issues > 0:
-                    subject = f"NAS Mount Issues on {issues} Workstation(s)"
+                    subject = f"NAS Monitor Alert: {issues} Workstation(s) with Issues"
                     send_email_notification(subject, report)
             
         except Exception as e:
@@ -798,9 +798,9 @@ if __name__ == '__main__':
             
             # Send notifications if configured and issues found
             if myconfig.send_notifications:
-                issues = sum(1 for r in results if not r['mounts_ok'] or r['software_issues'])
+                issues = sum(1 for r in results if not r['online'] or not r['mounts_ok'] or r['software_issues'])
                 if issues > 0:
-                    subject = f"NAS Mount Issues on {issues} Workstation(s)"
+                    subject = f"NAS Monitor Alert: {issues} Workstation(s) with Issues"
                     send_email_notification(subject, report)
                     logger.info(f"Email notification sent for {issues} workstation(s) with issues")
             
