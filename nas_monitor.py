@@ -652,13 +652,12 @@ def send_email_notification(subject: str, body: str) -> None:
         import subprocess
         
         # Use system mail command (works with sendmail/postfix)
-        recipients = ','.join(myconfig.notification_addresses)
-        
-        # Create mail command
+        # Create mail command with each recipient as separate argument
         cmd = ['mail', '-s', subject]
         if hasattr(myconfig, 'notification_source') and myconfig.notification_source:
             cmd.extend(['-r', myconfig.notification_source])
-        cmd.append(recipients)
+        # Add all recipients as separate arguments
+        cmd.extend(myconfig.notification_addresses)
         
         # Send email using subprocess with stdin
         result = subprocess.run(
@@ -669,7 +668,8 @@ def send_email_notification(subject: str, body: str) -> None:
         )
         
         if result.returncode == 0:
-            logger.info(f"Email notification sent: {subject} to {recipients}")
+            recipients_str = ', '.join(myconfig.notification_addresses)
+            logger.info(f"Email notification sent: {subject} to {recipients_str}")
         else:
             stderr = result.stderr.decode('utf-8', errors='ignore')
             logger.error(f"Failed to send email: {stderr}")
