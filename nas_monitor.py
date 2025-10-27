@@ -170,6 +170,9 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
                 # Log NFS connection errors but without specific mount point
                 # These will be caught by the regular parsing if mount point is in output
                 logger.error(f"NFS mount error: {line}")
+            else:
+                # Log other mount.nfs errors for debugging
+                logger.debug(f"mount.nfs message: {line}")
     
     # Parse regular stdout output
     for line in stdout.splitlines():
@@ -220,10 +223,15 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
                 # Skip lines we can't parse
                 continue
     
-    # If we found mounts in the output, consider it successful
-    # Exit code can be non-zero due to other unrelated mount failures
+    # Check if any mounts have failure status
+    has_failures = any(m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown'] 
+                       for m in mounts)
+    
+    # If we found mounts, return them along with success/failure indication
     if mounts:
-        return True, mounts, ""
+        if has_failures:
+            logger.warning(f"Mount check completed with failures")
+        return True, mounts, ""  # Return True because we got data, failures are in the mount list
     
     # Only return failure if exit code is bad AND we found no mounts
     if exit_code != 0:
@@ -470,8 +478,11 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
                 report['mounts_ok'] = success
                 report['mount_details'] = mounts
     else:
-        report['mounts_ok'] = True
         report['mount_details'] = mounts
+        # Check if any mounts have failure status
+        has_failures = any(m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown'] 
+                          for m in mounts)
+        report['mounts_ok'] = not has_failures
     
     # Log mounts to database
     action_str = ', '.join(report['actions_taken']) if report['actions_taken'] else None
@@ -736,3 +747,4 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(f"Escaped or re-raised exception: {e}")
+
