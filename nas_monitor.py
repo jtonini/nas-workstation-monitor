@@ -352,11 +352,24 @@ def verify_software_access(workstation: str, mount_point: str,
 
 
 @trap
-def attempt_remount(workstation: str) -> Tuple[bool, str]:
-    """Attempt to remount all NAS directories on workstation"""
+def attempt_remount(workstation: str, mount_point: str = None) -> Tuple[bool, str]:
+    """Attempt to remount NAS directories on workstation
+    
+    Args:
+        workstation: Hostname
+        mount_point: Specific mount point to remount, or None for all mounts
+    """
     global myconfig, logger
     
-    cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'sudo mount -a']
+    if mount_point:
+        # Try to remount specific mount point
+        cmd = ['ssh'] + myconfig.ssh_options + [workstation, f'sudo mount {mount_point}']
+        logger.info(f"Attempting to remount {mount_point} on {workstation}")
+    else:
+        # Remount all
+        cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'sudo mount -a']
+        logger.info(f"Attempting to remount all on {workstation}")
+    
     result = dorunrun(cmd, timeout=60)
     exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
     
@@ -489,9 +502,31 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
     else:
         report['mount_details'] = mounts
         # Check if any mounts have failure status
-        has_failures = any(m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown'] 
-                          for m in mounts)
+        failed_mounts = [m for m in mounts if m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown']]
+        has_failures = len(failed_mounts) > 0
         report['mounts_ok'] = not has_failures
+        
+        # Attempt to fix failed mounts
+        if has_failures and myconfig.attempt_fix:
+            for failed_mount in failed_mounts:
+                mount_point = failed_mount['mount_point']
+                logger.info(f"Attempting to fix failed mount on {workstation}: {mount_point}")
+                fix_success, fix_msg = attempt_remount(workstation, mount_point)
+                report['actions_taken'].append(f"Remount {mount_point}: {fix_msg}")
+                
+                if fix_success:
+                    # Re-check this specific mount
+                    success_recheck, mounts_recheck, _ = get_mount_status(workstation)
+                    if success_recheck:
+                        # Update the mount in our list
+                        for i, m in enumerate(report['mount_details']):
+                            if m['mount_point'] == mount_point:
+                                recheck_mount = next((rm for rm in mounts_recheck if rm['mount_point'] == mount_point), None)
+                                if recheck_mount:
+                                    report['mount_details'][i] = recheck_mount
+                        # Re-evaluate if we still have failures
+                        failed_mounts = [m for m in report['mount_details'] if m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown']]
+                        report['mounts_ok'] = len(failed_mounts) == 0
     
     # Log mounts to database
     action_str = ', '.join(report['actions_taken']) if report['actions_taken'] else None

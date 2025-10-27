@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS mount_failures (
     failure_count INTEGER DEFAULT 1,
     resolved INTEGER DEFAULT 0 CHECK (resolved IN (0, 1)),
     resolved_at DATETIME,
-    resolved_by TEXT
+    resolved_by TEXT,
+    UNIQUE(workstation, mount_point, resolved)
 );
 
 -- Software availability checks
