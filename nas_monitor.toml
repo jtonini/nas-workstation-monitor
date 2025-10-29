@@ -19,7 +19,6 @@ log_file = '/home/zeus/nas_workstation_monitor.log'
 ########################################################################
 notification_addresses = [
     'hpc@richmond.edu',
-    'gflanagin@richmond.edu',
     'jtonini@richmond.edu'
 ]
 notification_source = 'zeus@jonimitchell'
