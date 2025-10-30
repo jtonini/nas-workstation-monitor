@@ -412,6 +412,46 @@ class NASMonitorDB(SQLiteDB):
         Returns:
             List of tuples
         """
+
+    def log_off_hours_issue(self, workstation: str, issue_type: str, details: str) -> None:
+        """Log an issue detected during off-hours for summary email"""
+        SQL = """
+            INSERT INTO off_hours_issues (workstation, issue_type, details, detected_at, notified)
+            VALUES (?, ?, ?, datetime('now'), 0)
+        """
+        self.execute_SQL(SQL, (workstation, issue_type, details))
+        self.commit()
+    
+    def get_off_hours_issues(self, unnotified_only: bool = True) -> List:
+        """Get off-hours issues for summary email"""
+        if unnotified_only:
+            SQL = """
+                SELECT id, workstation, issue_type, details, detected_at
+                FROM off_hours_issues
+                WHERE notified = 0
+                ORDER BY detected_at DESC
+            """
+        else:
+            SQL = """
+                SELECT id, workstation, issue_type, details, detected_at, notified_at
+                FROM off_hours_issues
+                ORDER BY detected_at DESC
+                LIMIT 100
+            """
+        return self.execute_SQL(SQL).fetchall()
+    
+    def mark_off_hours_issues_notified(self) -> int:
+        """Mark all unnotified off-hours issues as notified"""
+        SQL = """
+            UPDATE off_hours_issues
+            SET notified = 1, notified_at = datetime('now')
+            WHERE notified = 0
+        """
+        cursor = self.execute_SQL(SQL)
+        self.commit()
+        return cursor.rowcount
+
+
         SQL = f"""
             SELECT timestamp, device, status, users_active
             FROM workstation_mount_status

@@ -81,6 +81,21 @@ CREATE INDEX IF NOT EXISTS idx_failures_workstation
     ON mount_failures(workstation, mount_point, resolved);
 
 -- View: Recent mount checks (based on config)
+
+-- Table: Off-hours issue tracking
+CREATE TABLE IF NOT EXISTS off_hours_issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workstation TEXT NOT NULL,
+    issue_type TEXT NOT NULL,  -- 'offline', 'mount_failure', 'software_issue'
+    details TEXT,              -- JSON or text description
+    detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    notified INTEGER DEFAULT 0 CHECK (notified IN (0, 1)),
+    notified_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_off_hours_notified 
+    ON off_hours_issues(notified, detected_at);
+
 CREATE VIEW IF NOT EXISTS recent_mount_checks AS
     SELECT * FROM workstation_mount_status
     WHERE timestamp >= datetime('now', 
@@ -231,5 +246,4 @@ CREATE TRIGGER IF NOT EXISTS track_mount_failures
             failure_count = failure_count + 1
         WHERE resolved = 0;
     END;
-
 

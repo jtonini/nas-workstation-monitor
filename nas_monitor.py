@@ -69,6 +69,25 @@ __email__ = ['hpc@richmond.edu', 'jtonini@richmond.edu']
 __status__ = 'in progress'
 __license__ = 'MIT'
 
+
+def is_off_hours() -> bool:
+    """Check if current time is during off-hours (no email notifications)"""
+    global myconfig
+    
+    if not hasattr(myconfig, 'off_hours_start') or not hasattr(myconfig, 'off_hours_end'):
+        return False  # If not configured, never suppress
+    
+    current_hour = datetime.datetime.now().hour
+    start = myconfig.off_hours_start
+    end = myconfig.off_hours_end
+    
+    # Handle overnight periods (e.g., 19:00 to 05:00)
+    if start > end:
+        return current_hour >= start or current_hour < end
+    else:
+        return start <= current_hour < end
+
+
 mynetid = getpass.getuser()
 
 ###
@@ -687,6 +706,78 @@ def send_email_notification(subject: str, body: str) -> None:
 
 
 @trap
+
+def send_off_hours_summary() -> None:
+    """Send consolidated email of all issues detected during off-hours"""
+    global myconfig, logger, db
+    
+    issues = db.get_off_hours_issues(unnotified_only=True)
+    
+    if not issues:
+        logger.info("No off-hours issues to report")
+        return
+    
+    # Group issues by workstation
+    by_workstation = {}
+    for issue_id, workstation, issue_type, details, detected_at in issues:
+        if workstation not in by_workstation:
+            by_workstation[workstation] = []
+        by_workstation[workstation].append({
+            'type': issue_type,
+            'details': details,
+            'time': detected_at
+        })
+    
+    # Generate summary report
+    report_lines = [
+        "=" * 70,
+        "NAS Workstation Monitor - Off-Hours Summary",
+        f"Issues Detected: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Control Host: {socket.gethostname()}",
+        "=" * 70,
+        "",
+        f"Total Workstations with Issues: {len(by_workstation)}",
+        ""
+    ]
+    
+    for workstation in sorted(by_workstation.keys()):
+        report_lines.append("-" * 70)
+        report_lines.append(f"{workstation}:")
+        
+        # Group by issue type
+        issues_by_type = {}
+        for issue in by_workstation[workstation]:
+            issue_type = issue['type']
+            if issue_type not in issues_by_type:
+                issues_by_type[issue_type] = []
+            issues_by_type[issue_type].append(issue)
+        
+        for issue_type, type_issues in issues_by_type.items():
+            report_lines.append(f"  {issue_type.replace('_', ' ').title()}:")
+            # Show most recent occurrence
+            most_recent = max(type_issues, key=lambda x: x['time'])
+            report_lines.append(f"    First: {type_issues[-1]['time']}")
+            report_lines.append(f"    Last: {most_recent['time']}")
+            report_lines.append(f"    Count: {len(type_issues)}")
+            if most_recent['details']:
+                report_lines.append(f"    Details: {most_recent['details']}")
+        report_lines.append("")
+    
+    report_lines.append("=" * 70)
+    
+    report = "\n".join(report_lines)
+    
+    # Send email
+    subject = f"NAS Monitor Off-Hours Summary: {len(by_workstation)} Workstation(s) with Issues"
+    send_email_notification(subject, report)
+    
+    # Mark as notified
+    count = db.mark_off_hours_issues_notified()
+    logger.info(f"Off-hours summary sent for {count} issues across {len(by_workstation)} workstations")
+    
+    print(report)
+
+
 def nas_monitor_main(myargs: argparse.Namespace = None) -> int:
     """
     Main monitoring loop - continuous daemon that monitors all workstations.
@@ -795,7 +886,14 @@ if __name__ == '__main__':
         os.nice(myargs.nice)
 
     try:
-        if myargs.once:
+        if myargs.send_off_hours_summary:
+            # Send off-hours summary and exit
+            myconfig = load_config(myargs.config)
+            logger = URLogger(logfile=myconfig.log_file, level=logging.INFO)
+            db = NASMonitorDB(myconfig.database, myconfig.schema_file)
+            send_off_hours_summary()
+            sys.exit(os.EX_OK)
+        elif myargs.once:
             # Run once and exit
             myconfig = load_config(myargs.config)
             logger = URLogger(logfile=myconfig.log_file, level=logging.INFO)
@@ -808,9 +906,27 @@ if __name__ == '__main__':
             if myconfig.send_notifications:
                 issues = sum(1 for r in results if not r['online'] or not r['mounts_ok'] or r['software_issues'])
                 if issues > 0:
-                    subject = f"NAS Monitor Alert: {issues} Workstation(s) with Issues"
-                    send_email_notification(subject, report)
-                    logger.info(f"Email notification sent for {issues} workstation(s) with issues")
+                    # Check if we're in off-hours
+                    if is_off_hours():
+                        # Log issues for morning summary instead of sending email
+                        logger.info(f"Off-hours: Logging {issues} workstation issues for morning summary")
+                        for r in results:
+                            if not r['online']:
+                                db.log_off_hours_issue(r['workstation'], 'offline', 'Workstation is offline')
+                            elif not r['mounts_ok']:
+                                mount_details = ', '.join([f"{m['mount_point']}: {m['status']}" 
+                                                          for m in r.get('mount_details', []) 
+                                                          if m.get('status') not in ['mounted', 'newly_mounted']])
+                                db.log_off_hours_issue(r['workstation'], 'mount_failure', mount_details)
+                            if r['software_issues']:
+                                software_details = ', '.join([f"{s['software']} at {s['mount']}" 
+                                                             for s in r['software_issues']])
+                                db.log_off_hours_issue(r['workstation'], 'software_issue', software_details)
+                    else:
+                        # Business hours - send email immediately
+                        subject = f"NAS Monitor Alert: {issues} Workstation(s) with Issues"
+                        send_email_notification(subject, report)
+                        logger.info(f"Email notification sent for {issues} workstation(s) with issues")
             
             sys.exit(os.EX_OK)
         else:
