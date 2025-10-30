@@ -535,8 +535,16 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
             mynetid, os.getenv('SLURM_JOB_ID')
         )
     
-    # Check critical software if mounts are OK
+    # Check critical software if mounts are OK and workstation is still online
     if report['mounts_ok']:
+        # Verify workstation is still online before checking software (can take time)
+        if not check_workstation_online(workstation):
+            logger.warning(f"{workstation} went offline during monitoring")
+            report['online'] = False
+            db.update_workstation_status(workstation, is_online=False, active_users=0,
+                                        user_list=None, checked_by=mynetid)
+            return report
+        
         for sw_config in myconfig.critical_software:
             mount_point = sw_config['mount']
             software_list = sw_config['software']
@@ -811,4 +819,3 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(f"Escaped or re-raised exception: {e}")
-
