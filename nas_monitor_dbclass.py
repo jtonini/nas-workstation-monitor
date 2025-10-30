@@ -419,7 +419,7 @@ class NASMonitorDB(SQLiteDB):
             INSERT INTO off_hours_issues (workstation, issue_type, details, detected_at, notified)
             VALUES (?, ?, ?, datetime('now'), 0)
         """
-        self.execute_SQL(SQL, (workstation, issue_type, details))
+        self.execute_SQL(SQL, workstation, issue_type, details)
         self.commit()
     
     def get_off_hours_issues(self, unnotified_only: bool = True) -> List:
