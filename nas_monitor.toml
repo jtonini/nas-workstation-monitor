@@ -127,5 +127,5 @@ keep_hours = 168
 aggressive_cleanup = false
 
 # Off-hours email suppression
-off_hours_start = 19  # 7 PM
-off_hours_end = 5     # 5 AM
+off_hours_start = 18  # 6 PM
+off_hours_end = 6     # 6 AM
