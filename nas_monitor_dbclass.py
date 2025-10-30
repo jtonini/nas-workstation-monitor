@@ -438,7 +438,7 @@ class NASMonitorDB(SQLiteDB):
                 ORDER BY detected_at DESC
                 LIMIT 100
             """
-        return self.execute_SQL(SQL).fetchall()
+        return self.execute_SQL(SQL)
     
     def mark_off_hours_issues_notified(self) -> int:
         """Mark all unnotified off-hours issues as notified"""
