@@ -874,9 +874,9 @@ if __name__ == '__main__':
         default='/home/zeus/nas-workstation-monitor/nas_monitor.toml',
         help="Configuration file path")
     parser.add_argument('--once', action='store_true',
+        help="Run once and exit (don't loop)")
     parser.add_argument('--send-off-hours-summary', action='store_true',
         help='Send summary of off-hours issues and exit')
-        help="Run once and exit (don't loop)")
     parser.add_argument('--nice', type=int, choices=range(0, 20), default=0,
         help="Niceness may affect execution time")
     parser.add_argument('-v', '--verbose', action='store_true',
