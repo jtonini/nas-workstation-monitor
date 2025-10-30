@@ -757,12 +757,12 @@ def send_off_hours_summary() -> None:
             # Show most recent occurrence
             most_recent = max(type_issues, key=lambda x: x['time'])
             # Convert UTC to local time for display
-                            first_time = datetime.datetime.fromisoformat(type_issues[-1]['time'])
-                            first_local = first_time.replace(tzinfo=datetime.timezone.utc).astimezone()
-                            report_lines.append(f"    First: {first_local.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            first_time = datetime.datetime.fromisoformat(type_issues[-1]['time'])
+            first_local = first_time.replace(tzinfo=datetime.timezone.utc).astimezone()
+            report_lines.append(f"    First: {first_local.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             last_time = datetime.datetime.fromisoformat(most_recent['time'])
-                            last_local = last_time.replace(tzinfo=datetime.timezone.utc).astimezone()
-                            report_lines.append(f"    Last: {last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            last_local = last_time.replace(tzinfo=datetime.timezone.utc).astimezone()
+            report_lines.append(f"    Last: {last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             report_lines.append(f"    Count: {len(type_issues)}")
             if most_recent['details']:
                 report_lines.append(f"    Details: {most_recent['details']}")
