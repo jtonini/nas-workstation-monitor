@@ -125,3 +125,7 @@ keep_hours = 168
 # Standard mode (false) keeps unresolved issues regardless of age
 ###
 aggressive_cleanup = false
+
+# Off-hours email suppression
+off_hours_start = 19  # 7 PM
+off_hours_end = 5     # 5 AM
