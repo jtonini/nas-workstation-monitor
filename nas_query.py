@@ -158,15 +158,15 @@ def show_status() -> None:
 
 @trap
 def show_failures() -> None:
-    """Show unresolved mount failures"""
+    """Show unresolved mount failures and recent failure history"""
     global db
+    from datetime import datetime
     
     print("\n" + "=" * 70)
     print("UNRESOLVED MOUNT FAILURES")
     print("=" * 70 + "\n")
     
     failures = db.get_unresolved_failures()
-    
     if use_pandas and isinstance(failures, pandas.DataFrame):
         if failures.empty:
             print("No unresolved failures found.")
@@ -176,6 +176,71 @@ def show_failures() -> None:
         if not failures:
             print("No unresolved failures found.")
         else:
+            print(f"{'Workstation':<15} {'Mount Point':<25} {'First Failure':<20} {'Count':<6} {'Days':<6}")
+            print("-" * 70)
+            for row in failures:
+                print(f"{row[0]:<15} {row[1]:<25} {row[2]:<20} {row[4]:<6} {row[5]:<6.1f}")
+    
+    # Show recent failures (last 7 days)
+    print("\n" + "=" * 70)
+    print("RECENT FAILURES (Last 7 Days)")
+    print("=" * 70 + "\n")
+    
+    SQL = """
+        SELECT 
+            workstation,
+            mount_point,
+            timestamp as failed_at,
+            status,
+            resolved,
+            resolved_at
+        FROM workstation_mount_status
+        WHERE status NOT IN ('mounted', 'newly_mounted')
+          AND timestamp >= datetime('now', '-7 days')
+        ORDER BY timestamp DESC
+        LIMIT 50
+    """
+    
+    recent = db.execute_SQL(SQL)
+    
+    if not recent:
+        print("No failures in the last 7 days.")
+    else:
+        print(f"{'Workstation':<12} {'Mount Point':<25} {'Failed At':<20} {'Resolved At':<20} {'Duration':<10}")
+        print("-" * 100)
+        
+        for r in recent:
+            ws = r['workstation']
+            mount = r['mount_point']
+            failed = r['failed_at']
+            resolved_text = r['resolved_at'] if r['resolved'] else 'Unresolved'
+            
+            # Calculate duration if resolved
+            if r['resolved'] and r['resolved_at']:
+                try:
+                    failed_dt = datetime.fromisoformat(failed)
+                    resolved_dt = datetime.fromisoformat(r['resolved_at'])
+                    delta = resolved_dt - failed_dt
+                    
+                    if delta.total_seconds() < 60:
+                        duration = f"{int(delta.total_seconds())}s"
+                    elif delta.total_seconds() < 3600:
+                        minutes = int(delta.total_seconds() / 60)
+                        seconds = int(delta.total_seconds() % 60)
+                        duration = f"{minutes}m {seconds}s"
+                    else:
+                        hours = int(delta.total_seconds() / 3600)
+                        minutes = int((delta.total_seconds() % 3600) / 60)
+                        duration = f"{hours}h {minutes}m"
+                except:
+                    duration = "Unknown"
+            else:
+                duration = "Ongoing"
+            
+            print(f"{ws:<12} {mount:<25} {failed:<20} {resolved_text:<20} {duration:<10}")
+    
+    print()
+
             print(f"{'Workstation':<15} {'Mount Point':<25} {'First Failure':<20} {'Count':<6} {'Days':<6}")
             print("-" * 70)
             for row in failures:
