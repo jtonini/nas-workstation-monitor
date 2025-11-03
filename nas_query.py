@@ -215,6 +215,8 @@ def show_failures() -> None:
             failed = r[2]
             last_failure = r[3]
             failure_count = r[4]
+            resolved_at = r[6]
+            resolved_text = resolved_at if resolved else 'Unresolved'
             resolved = r[5]
             
             # Calculate duration if resolved
