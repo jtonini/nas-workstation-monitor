@@ -147,7 +147,11 @@ class NASMonitorDB(SQLiteDB):
     CLEANUP_OLD_MOUNTS = """DELETE FROM old_mount_checks"""
 
     CLEANUP_OLD_SOFTWARE = """DELETE FROM old_software_checks"""
-    CLEANUP_OLD_FAILURES = """DELETE FROM old_resolved_failures"""
+    CLEANUP_OLD_FAILURES = """
+        DELETE FROM mount_failures 
+        WHERE resolved = 1 
+        AND resolved_at < datetime('now', printf('-%d hours', (SELECT keep_hours FROM monitor_config WHERE id=1)))
+    """
 
     GET_CONFIG = """SELECT * FROM monitor_config WHERE id = 1"""
 
