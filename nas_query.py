@@ -210,16 +210,18 @@ def show_failures() -> None:
         print("-" * 100)
         
         for r in recent:
-            ws = r['workstation']
-            mount = r['mount_point']
-            failed = r['failed_at']
-            resolved_text = r['resolved_at'] if r['resolved'] else 'Unresolved'
+            ws = r[0]
+            mount = r[1]
+            failed = r[2]
+            last_failure = r[3]
+            failure_count = r[4]
+            resolved = r[5]
             
             # Calculate duration if resolved
-            if r['resolved'] and r['resolved_at']:
+            if resolved and resolved_at:
                 try:
                     failed_dt = datetime.fromisoformat(failed)
-                    resolved_dt = datetime.fromisoformat(r['resolved_at'])
+                    resolved_dt = datetime.fromisoformat(resolved_at)
                     delta = resolved_dt - failed_dt
                     
                     if delta.total_seconds() < 60:
@@ -235,6 +237,12 @@ def show_failures() -> None:
                 except:
                     duration = "Unknown"
             else:
+                duration = "Ongoing"
+            
+            print(f"{ws:<12} {mount:<25} {failed:<20} {resolved_text:<20} {duration:<10}")
+    
+    print()
+
                 duration = "Ongoing"
             
             print(f"{ws:<12} {mount:<25} {failed:<20} {resolved_text:<20} {duration:<10}")
