@@ -255,3 +255,10 @@ CREATE VIEW IF NOT EXISTS old_resolved_failures AS
     AND resolved_at < datetime('now',
         printf('-%d hours', (SELECT keep_hours FROM monitor_config WHERE id=1))
     );
+
+-- Indexes for faster cleanup queries
+CREATE INDEX IF NOT EXISTS idx_mount_timestamp 
+    ON workstation_mount_status(timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_software_timestamp 
+    ON software_availability(timestamp);
