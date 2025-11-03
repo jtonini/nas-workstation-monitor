@@ -243,11 +243,6 @@ def show_failures() -> None:
     
     print()
 
-                duration = "Ongoing"
-            
-            print(f"{ws:<12} {mount:<25} {failed:<20} {resolved_text:<20} {duration:<10}")
-    
-    print()
 
     print()
 
