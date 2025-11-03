@@ -247,3 +247,11 @@ CREATE TRIGGER IF NOT EXISTS track_mount_failures
         WHERE resolved = 0;
     END;
 
+
+-- View for old resolved failures (for cleanup)
+CREATE VIEW IF NOT EXISTS old_resolved_failures AS
+    SELECT * FROM mount_failures
+    WHERE resolved = 1
+    AND resolved_at < datetime('now',
+        printf('-%d hours', (SELECT keep_hours FROM monitor_config WHERE id=1))
+    );

@@ -604,8 +604,8 @@ def monitor_all_workstations() -> List[Dict]:
         results.append(result)
     
     # Cleanup old records using database triggers
-    db.cleanup_old_records()
-    logger.info("Database cleanup completed")
+    mount_deleted, software_deleted, failures_deleted = db.cleanup_old_records()
+    logger.info(f"Database cleanup: {mount_deleted} mount, {software_deleted} software, {failures_deleted} failure records removed")
     
     return results
 

@@ -390,13 +390,14 @@ def cleanup_database(confirm: bool = False) -> None:
         print("Use --confirm to actually perform cleanup")
         return
 
-    mount_deleted, software_deleted = db.cleanup_old_records()
-    total = mount_deleted + software_deleted
+    mount_deleted, software_deleted, failures_deleted = db.cleanup_old_records()
+    total = mount_deleted + software_deleted + failures_deleted
 
-    logger.info(f"Cleanup: removed {mount_deleted} mount, {software_deleted} software records")
+    logger.info(f"Cleanup: removed {mount_deleted} mount, {software_deleted} software, {failures_deleted} failure records")
     print(f"Cleanup complete: {total} records removed")
     print(f"  Mount records: {mount_deleted}")
     print(f"  Software records: {software_deleted}")
+    print(f"  Failure records: {failures_deleted}")
 
 
 @trap

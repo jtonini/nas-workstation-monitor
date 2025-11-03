@@ -147,6 +147,7 @@ class NASMonitorDB(SQLiteDB):
     CLEANUP_OLD_MOUNTS = """DELETE FROM old_mount_checks"""
 
     CLEANUP_OLD_SOFTWARE = """DELETE FROM old_software_checks"""
+    CLEANUP_OLD_FAILURES = """DELETE FROM old_resolved_failures"""
 
     GET_CONFIG = """SELECT * FROM monitor_config WHERE id = 1"""
 
@@ -316,17 +317,17 @@ class NASMonitorDB(SQLiteDB):
 
 
     @trap
-    def cleanup_old_records(self) -> Tuple[int, int]:
+    def cleanup_old_records(self) -> Tuple[int, int, int]:
         """
-        Clean up old records using database triggers
-        
+        Clean up old records using database views
         Returns:
-            Tuple of (mount_records_deleted, software_records_deleted)
+            Tuple of (mount_records_deleted, software_records_deleted, failures_deleted)
         """
         mount_deleted = self.execute_SQL(NASMonitorDB.CLEANUP_OLD_MOUNTS)
         software_deleted = self.execute_SQL(NASMonitorDB.CLEANUP_OLD_SOFTWARE)
+        failures_deleted = self.execute_SQL(NASMonitorDB.CLEANUP_OLD_FAILURES)
         self.execute_SQL('VACUUM')
-        return (mount_deleted, software_deleted)
+        return (mount_deleted, software_deleted, failures_deleted)
 
 
     @trap
