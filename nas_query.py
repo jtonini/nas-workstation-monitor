@@ -190,14 +190,14 @@ def show_failures() -> None:
         SELECT 
             workstation,
             mount_point,
-            timestamp as failed_at,
-            status,
+            first_failure as failed_at,
+            last_failure,
+            failure_count,
             resolved,
             resolved_at
-        FROM workstation_mount_status
-        WHERE status NOT IN ('mounted', 'newly_mounted')
-          AND timestamp >= datetime('now', '-7 days')
-        ORDER BY timestamp DESC
+        FROM mount_failures
+        WHERE first_failure >= datetime('now', '-7 days')
+        ORDER BY first_failure DESC
         LIMIT 50
     """
     
