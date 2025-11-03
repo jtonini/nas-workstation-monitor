@@ -241,11 +241,6 @@ def show_failures() -> None:
     
     print()
 
-            print(f"{'Workstation':<15} {'Mount Point':<25} {'First Failure':<20} {'Count':<6} {'Days':<6}")
-            print("-" * 70)
-            for row in failures:
-                print(f"{row[0]:<15} {row[1]:<25} {row[2]:<20} {row[4]:<6} {row[5]:<6.1f}")
-    
     print()
 
 
