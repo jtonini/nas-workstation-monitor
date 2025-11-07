@@ -542,6 +542,7 @@ When deployed on a monitoring host (e.g., jonimitchell):
 - pandas (for prettier query output)
 - postfix/sendmail (for email notifications)
 
+[paste the manifest_additions.txt content here]
 ---
 ## Contact
 
