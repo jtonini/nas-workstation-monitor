@@ -16,7 +16,7 @@ sqlite3 "$DB_PATH" <<SQL
 .output ${EXPORT_DIR}/workstation_mount_status.tsv
 SELECT * FROM workstation_mount_status ORDER BY timestamp DESC;
 .output ${EXPORT_DIR}/workstation_status.tsv
-SELECT * FROM workstation_status ORDER BY last_check DESC;
+SELECT * FROM workstation_status ORDER BY last_seen DESC;
 .output ${EXPORT_DIR}/software_availability.tsv
 SELECT * FROM software_availability ORDER BY timestamp DESC;
 .output ${EXPORT_DIR}/mount_failures.tsv
