@@ -437,7 +437,7 @@ function nas_help() {
     echo "  nas_software             Show software availability"
     echo "  nas_recent               Show recent failures (24 hours)"
     echo "  nas_config               Show database configuration"
-  nas_db_export            Export database to tab-delimited TSV files
+    echo "  nas_db_export            Export database to tab-delimited TSV files"
     echo "  nas_help                 Show this help message"
     echo ""
     echo "DATABASE CHECKS:"
