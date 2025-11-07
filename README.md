@@ -1,228 +1,371 @@
-# NAS Workstation Mount Monitor
+# NAS Workstation Monitor
 
-Automated monitoring and maintenance of NAS mounts across chemistry lab workstations.
+Automated monitoring system for NAS mount points across multiple workstations with intelligent alerting and comprehensive tracking.
 
 ## Features
 
-- **Automated Monitoring**: Hourly checks of all workstation NAS mounts
-- **User Tracking**: Monitors and displays logged-in users (up to 3 usernames per workstation)
-- **Auto-Remediation**: Automatic remounting attempts when issues detected
-- **Database Tracking**: SQLite with views, triggers, and proper locking
-- **Database Diagnostics**: Built-in health checks and configuration inspection
-- **Software Verification**: Checks critical software accessibility (Amber, Columbus, Gaussian)
-- **Email Notifications**: Alerts for persistent issues
-- **Query Tools**: Rich command-line interface for status and analysis
-- **Utility Libraries**: Uses local copies of utility modules (SQLiteDB, dorunrun, urlogger, etc.)
+### Core Monitoring
+- **Hourly automated checks** of all workstation NAS mounts
+- **17 workstations** monitored simultaneously
+- **SSH-based remote monitoring** with 30-second timeout protection
+- **Mount status tracking** for all NFS mount points
+- **Software availability checks** (Gaussian, Maestro, Schrödinger)
+- **User activity tracking** on each workstation
+- **7-day data retention** with automatic cleanup
 
-## Quick Start
+### Smart Alerting
+- **Off-hours suppression** (6 PM - 6 AM): No email alerts during nights/weekends
+- **Morning summary email** (6 AM): Single daily report of any off-hours issues
+- **Immediate alerts** during business hours for critical failures
+- **Email notifications** via Richmond's SMTP relay
+- **Issue deduplication**: Won't spam you with repeat alerts
+
+### Data Management
+- **SQLite database** for all monitoring data
+- **Automatic cleanup** of records older than 7 days
+- **Timestamp indexes** for fast queries
+- **Database export** to tab-delimited CSV/TSV format
+- **VACUUM optimization** during cleanup
+
+### Query Tools
+- **Bash functions** for quick status checks
+- **Command-line interface** for detailed queries
+- **Real-time status** of all workstations
+- **Reliability statistics** (7-day success rates)
+- **Failure history** with duration tracking
+- **Workstation detail** views
+
+## Installation
+
+### Prerequisites
+- Python 3.9+
+- SSH access to all monitored workstations
+- SQLite3
+- Git
+
+### Setup on jonimitchell
 
 ```bash
-# 1. Clone repository
+# Clone repository
+cd /home/zeus
 git clone https://github.com/jtonini/nas-workstation-monitor.git
 cd nas-workstation-monitor
 
-# 2. Edit configuration
-vi nas_monitor.toml
-# Update: notification_addresses, workstations list, critical_software
+# Initialize git submodule (hpclib)
+git submodule init
+git submodule update
 
-# 3. Test with one workstation
-python3 nas_monitor.py --once --verbose
+# Configure monitoring
+cp nas_monitor.toml.example nas_monitor.toml
+vi nas_monitor.toml  # Edit configuration
 
-# 4. Set up bash functions (recommended for sysadmins)
-echo 'source ~/nas-workstation-monitor/nas_functions.sh' >> ~/.bashrc
-source ~/.bashrc
+# Initialize database
+sqlite3 ~/nas_workstation_monitor.db < nas_monitor_schema.sql
 
-# 5. Deploy to cron
+# Load bash functions
+source nas_functions.sh
+
+# Add to your .bashrc for persistence
+echo "source /home/zeus/nas-workstation-monitor/nas_functions.sh" >> ~/.bashrc
+```
+
+### Configure Cron
+
+```bash
+# Edit crontab
 crontab -e
-# Add: 0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_workstation_monitor.log 2>&1
-```
 
-## Usage
+# Add hourly monitoring
+0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py --once >> /home/zeus/nas_workstation_monitor.log 2>&1
 
-### Bash Helper Functions (Recommended)
-
-These provide simple commands for sysadmins:
-
-```bash
-# Run monitor once
-nas_monitor
-
-# Check current status (now shows logged-in users)
-nas_status
-
-# Show failures
-nas_failures
-
-# Show reliability stats (7-day default)
-nas_reliability
-
-# Show detail for specific workstation (now includes user list)
-nas_detail adam
-
-# Show software availability
-nas_software
-
-# Database health check
-nas_dbcheck
-
-# Show recent failures (24 hours)
-nas_recent
-
-# Show configuration
-nas_config
-
-# Show all available functions
-nas_help
-```
-
-### Database Diagnostics
-
-The `nas_dbcheck` function provides quick database health checks:
-
-```bash
-# Quick health check (default)
-nas_dbcheck
-
-# Show configuration only
-nas_dbcheck config
-
-# Check data retention status
-nas_dbcheck retention
-
-# Show record counts by table
-nas_dbcheck records
-
-# Run all diagnostics
-nas_dbcheck all
-```
-
-**Example Output:**
-```
-======================================================================
-DATABASE HEALTH CHECK
-======================================================================
-Configuration:
-  Retention: 168 hours (7.0 days)
-  Cleanup: Auto
-Record Counts:
-  Mount records: 1248
-  Workstation status: 17
-  Software checks: 51
-  Failures: 0
-Data Age (Local Time):
-  Oldest: 2025-10-19 15:30:00 (168.2 hours old)
-  Newest: 2025-10-26 15:30:18 (0.1 hours old)
-Database File:
-  Size: 280K
-  Modified: Oct 26 15:30
-```
-
-### Command Line Interface
-
-All scripts have built-in `--help`:
-
-```bash
-# Monitor help
-python3 nas_monitor.py --help
-
-# Query help
-python3 nas_query.py --help
-```
-
-#### Monitoring Commands
-
-```bash
-# Run once (no daemon mode)
-python3 nas_monitor.py --once
-
-# Run as daemon (continuous monitoring)
-python3 nas_monitor.py
-
-# Specify custom config
-python3 nas_monitor.py --config /path/to/config.toml
-
-# Verbose output
-python3 nas_monitor.py --once --verbose
-
-# Set process priority
-python3 nas_monitor.py --nice 10
-```
-
-#### Query Commands
-
-```bash
-# Current status of all workstations
-python3 nas_query.py status
-
-# Show unresolved failures
-python3 nas_query.py failures
-
-# Show recent failures (24 hours)
-python3 nas_query.py recent
-
-# Show 7-day reliability statistics
-python3 nas_query.py reliability
-
-# Show software availability
-python3 nas_query.py software
-
-# Show detailed history for a workstation
-python3 nas_query.py detail --workstation adam --hours 48
-
-# Show database configuration
-python3 nas_query.py config
-
-# Update database configuration
-python3 nas_query.py update-config --keep-hours 168 --aggressive
-
-# Clean up old records (dry run)
-python3 nas_query.py cleanup
-
-# Clean up old records (actually delete)
-python3 nas_query.py cleanup --confirm
-
-# Database health check
-nas_dbcheck
+# Add 6 AM off-hours summary (optional - monitoring handles this automatically)
+0 6 * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py --send-off-hours-summary >> /home/zeus/nas_workstation_monitor.log 2>&1
 ```
 
 ## Configuration
 
-All settings are in `nas_monitor.toml`:
+### nas_monitor.toml
 
-```toml
-# Database and logging
-database = '/home/zeus/nas_workstation_monitor.db'
-log_file = '/home/zeus/nas_workstation_monitor.log'
+Key settings:
+- `database`: Path to SQLite database
+- `log_file`: Monitoring log location
+- `email.recipients`: Alert email addresses
+- `off_hours`: Configure quiet hours (default: 18:00-06:00)
+- `workstations`: List of workstations to monitor
 
-# Email notifications
-notification_addresses = ['hpc@richmond.edu']
-notification_source = 'zeus@jonimitchell'
+## Usage
 
-# Monitoring behavior
-time_interval = 3600  # 1 hour
-attempt_fix = true
-send_notifications = true
+### Bash Functions (Quick Commands)
 
-# Data retention (7 days) - stored in database
-keep_hours = 168
+```bash
+# Check current status of all workstations
+nas_status
 
-# Track active users on workstations
-track_users = true
+# View 7-day reliability statistics
+nas_reliability
 
-# Workstations to monitor
-workstations = [
-    {host = 'adam', mounts = ['/usr/local/chem.sw']},
-    {host = 'sarah', mounts = ['/usr/local/chem.sw']},
-    # ... add more workstations
-]
+# Show unresolved failures + recent failure history
+nas_failures
 
-# Critical software to verify
-critical_software = [
-    {mount = '/usr/local/chem.sw', software = ['amber', 'Columbus', 'gaussian']}
-]
+# Show recent failures (last 24 hours)
+nas_recent
+
+# Database health check
+nas_dbcheck
+
+# View detailed workstation history
+nas_detail <workstation> [hours]
+
+# Export database to TSV files
+nas_db_export
+
+# Show help
+nas_help
 ```
 
-See `nas_monitor.toml` for all options.
+### Command Line Interface
+
+```bash
+# Current status
+python3 nas_query.py status
+
+# Failures (unresolved + 7-day history with durations)
+python3 nas_query.py failures
+
+# Recent failures (24 hours)
+python3 nas_query.py recent
+
+# Reliability stats
+python3 nas_query.py reliability
+
+# Software availability
+python3 nas_query.py software
+
+# Workstation detail
+python3 nas_query.py detail --workstation adam --hours 48
+
+# Database configuration
+python3 nas_query.py config
+
+# Manual cleanup
+python3 nas_query.py cleanup --confirm
+```
+
+### Manual Monitoring
+
+```bash
+# Run monitoring once (manual check)
+python3 nas_monitor.py --once
+
+# Run in daemon mode (not recommended - use cron instead)
+python3 nas_monitor.py --daemon
+
+# Send off-hours summary (usually automatic at 6 AM)
+python3 nas_monitor.py --send-off-hours-summary
+```
+
+## Database Schema
+
+### Tables
+
+- **workstation_mount_status**: All mount check results with timestamps
+- **workstation_status**: Online/offline status of workstations
+- **software_availability**: Software accessibility checks
+- **mount_failures**: Failure tracking with resolution status
+- **off_hours_issues**: Issues detected during quiet hours (6 PM - 6 AM)
+- **monitor_config**: System configuration (retention period, etc.)
+
+### Views
+
+- **current_workstation_summary**: Latest status of all mounts
+- **workstation_reliability**: 7-day success rate statistics
+- **software_summary**: Software availability summary
+- **unresolved_failures**: Active unresolved mount failures
+- **old_mount_checks**: Records eligible for cleanup (>7 days)
+- **old_software_checks**: Software records eligible for cleanup
+- **old_resolved_failures**: Resolved failures eligible for cleanup
+
+## Email Alerts
+
+### Alert Behavior
+
+**Business Hours (6 AM - 6 PM):**
+- Immediate email for workstation offline
+- Immediate email for mount failures
+- No emails for transient issues that resolve quickly
+
+**Off Hours (6 PM - 6 AM):**
+- Issues logged to `off_hours_issues` table
+- No immediate emails sent
+- Single summary email at 6 AM if any issues occurred
+
+### Email Content
+- Workstation name and mount point
+- Issue type (offline, mount failed, etc.)
+- Timestamp of detection
+- User activity information
+
+## Data Export
+
+Export database to tab-delimited format for analysis in Excel, R, or Python:
+
+```bash
+nas_db_export
+```
+
+Creates timestamped directory with:
+- **Raw tables**: workstation_mount_status.tsv, mount_failures.tsv, etc.
+- **Summary views**: current_status_summary.tsv, reliability_summary.tsv
+- **README.txt**: File descriptions and usage examples
+
+### Using Exported Data
+
+```r
+# R
+data <- read.delim("~/nas_monitor_export_*/workstation_mount_status.tsv")
+```
+
+```python
+# Python/Pandas
+import pandas as pd
+df = pd.read_csv("~/nas_monitor_export_*/workstation_mount_status.tsv", sep="\t")
+```
+
+```excel
+# Excel
+File > Open > Select .tsv file > Import as tab-delimited
+```
+
+## Maintenance
+
+### Database Cleanup
+
+Automatic cleanup runs hourly during monitoring:
+- Removes mount records older than 7 days
+- Removes software checks older than 7 days  
+- Removes resolved failures older than 7 days
+- Keeps unresolved failures indefinitely
+- Runs VACUUM to reclaim space
+
+Manual cleanup:
+```bash
+nas_query cleanup --confirm
+```
+
+### Log Management
+
+Monitor log location: `/home/zeus/nas_workstation_monitor.log`
+
+```bash
+# View recent activity
+tail -100 /home/zeus/nas_workstation_monitor.log
+
+# Monitor in real-time
+tail -f /home/zeus/nas_workstation_monitor.log
+
+# Rotate logs (if needed)
+logrotate /etc/logrotate.d/nas_monitor
+```
+
+### Troubleshooting
+
+**Monitoring not running:**
+```bash
+# Check cron
+crontab -l
+
+# Check for hung processes
+ps aux | grep nas_monitor
+
+# Check log for errors
+tail -50 /home/zeus/nas_workstation_monitor.log
+```
+
+**Database locked:**
+```bash
+# Check for running processes
+ps aux | grep nas_monitor
+
+# Wait for monitoring to complete (takes ~30 seconds)
+# Then retry query
+```
+
+**High database size:**
+```bash
+# Check database stats
+nas_dbcheck
+
+# Database will naturally shrink as old records age out
+# Stabilizes at ~10-15MB for 7 days of data
+```
+
+## Architecture
+
+### Monitoring Flow
+1. Cron triggers `nas_monitor.py --once` every hour
+2. Script checks all 17 workstations sequentially via SSH
+3. Results stored in SQLite database
+4. Cleanup removes records older than 7 days
+5. Alerts sent based on time of day (business hours vs off-hours)
+6. Off-hours issues logged for morning summary
+
+### Database Updates
+1. Every check inserts new records into `workstation_mount_status`
+2. Triggers automatically update `mount_failures` table
+3. Auto-resolve triggers mark failures as resolved when mounts return
+4. Cleanup runs after monitoring completes
+5. VACUUM reclaims disk space
+
+### Alert Logic
+- **Business hours**: Immediate email for critical issues
+- **Off hours**: Log to `off_hours_issues`, suppress email
+- **6 AM summary**: Query `off_hours_issues` for previous night
+- **Deduplication**: Won't alert on same issue multiple times
+
+## Development
+
+### Repository Structure
+```
+nas-workstation-monitor/
+├── nas_monitor.py              # Main monitoring script
+├── nas_monitor_dbclass.py      # Database class
+├── nas_query.py                # Query interface
+├── nas_db_export.sh            # Database export script
+├── nas_monitor_schema.sql      # Database schema
+├── nas_monitor.toml            # Configuration
+├── nas_functions.sh            # Bash convenience functions
+├── nas_help.txt                # Help text
+├── README.md                   # This file
+└── hpclib/                     # Git submodule (utilities)
+```
+
+### Git Workflow
+```bash
+# On badenpowell (development)
+cd /NAS_mount
+# Make changes, test
+git add .
+git commit -m "Description of changes"
+git push
+
+# On jonimitchell (production)
+cd /home/zeus/nas-workstation-monitor
+git pull
+# Changes deployed automatically
+```
+
+### Adding a Workstation
+
+Edit `nas_monitor.toml`:
+```toml
+[[workstations]]
+name = "new_workstation"
+user = "zeus"
+mounts = ["/usr/local/chem.sw", "/franksinatra/logP"]
+software_mounts = ["/usr/local/chem.sw"]
+```
+
+No restart needed - next hourly run will include it.
 
 ## Output Examples
 
@@ -238,6 +381,21 @@ adam            /usr/local/chem.sw        mounted    1        1      kr7dh
 aamy            /usr/local/chem.sw        mounted    1        0
 ```
 
+### Failures Output (with duration):
+```
+======================================================================
+UNRESOLVED MOUNT FAILURES
+======================================================================
+No unresolved failures found.
+
+======================================================================
+RECENT FAILURES (Last 7 Days)
+======================================================================
+Workstation  Mount Point              Failed At            Resolved At          Duration
+----------------------------------------------------------------------------------------------------
+khanh        /franksinatra/logP       2025-10-27 15:19:05  2025-10-27 16:00:16  41m 11s
+```
+
 ### Detail Output (with users):
 ```
 ======================================================================
@@ -249,60 +407,26 @@ Timestamp            Mount Point               Status     Users  User List
 2025-10-26 18:21:10  /usr/local/chem.sw        mounted    2      kr7dh,ystarodubets
 ```
 
-## Database Schema
-
-The monitor uses SQLite with:
-- **Tables**: workstation_mount_status, workstation_status, mount_failures, software_availability, monitor_config
-- **Views**: current_workstation_summary, unresolved_failures, workstation_reliability, software_summary, recent_failure_summary
-- **Triggers**: Auto-cleanup of old data, auto-resolve failures
-- **Config table**: Runtime configuration stored in database (keep_hours, cleanup_mode)
-- **User Tracking**: `workstation_status` table includes `active_users` (count) and `user_list` (up to 3 usernames)
-- **Timestamps**: All times displayed in local timezone (Eastern US) while stored as UTC
-
-Schema is automatically loaded from `nas_monitor_schema.sql`.
-
-## Architecture
-
+### Database Health Check:
 ```
-nas_monitor.py              # Main monitoring script
-├── nas_monitor_dbclass.py  # Database class
-├── nas_monitor_schema.sql  # SQL schema with views/triggers
-├── nas_monitor.toml        # TOML configuration
-└── Utility modules:
-    ├── sqlitedb.py         # Base SQLite class
-    ├── dorunrun.py         # Command execution
-    ├── urdecorators.py     # @trap decorator
-    ├── urlogger.py         # Logging
-    └── linuxutils.py       # Linux utilities
+======================================================================
+DATABASE HEALTH CHECK
+======================================================================
+Configuration:
+  Retention: 168 hours (7.0 days)
+  Cleanup: Auto
+Record Counts:
+  Mount records: 21672
+  Workstation status: 17
+  Software checks: 8564
+  Failures: 0
+Data Age (Local Time):
+  Oldest: 2025-10-27 14:00:32 (167.5 hours old)
+  Newest: 2025-11-03 14:00:22 (0.5 hours old)
+Database File:
+  Size: 12M
+  Modified: Nov 3 14:00
 ```
-
-Query tool:
-```
-nas_query.py               # Query interface
-├── nas_monitor_dbclass.py # Uses same DB class
-└── nas_functions.sh       # Bash wrapper functions
-```
-
-## Files
-
-**Core Scripts:**
-- `nas_monitor.py` - Main monitoring daemon
-- `nas_monitor_dbclass.py` - Database class (inherits from SQLiteDB)
-- `nas_query.py` - Query and reporting tool
-
-**Utility Modules:**
-- `sqlitedb.py` - Base SQLite database class
-- `dorunrun.py` - Safe command execution wrapper
-- `urdecorators.py` - Exception handling decorators
-- `urlogger.py` - Logging utilities
-- `linuxutils.py` - Linux system utilities
-
-**Database:**
-- `nas_monitor_schema.sql` - Database schema with views and triggers
-
-**Configuration:**
-- `nas_monitor.toml` - Main configuration file
-- `nas_functions.sh` - Bash helper functions
 
 ## Requirements
 
@@ -358,10 +482,7 @@ sqlite3 ~/nas_workstation_monitor.db "SELECT workstation, active_users, user_lis
 crontab -e
 
 # Add hourly monitoring
-0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_workstation_monitor.log 2>&1
-
-# Or every 15 minutes for more frequent checks
-*/15 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py >> /home/zeus/nas_workstation_monitor.log 2>&1
+0 * * * * cd /home/zeus/nas-workstation-monitor && python3 nas_monitor.py --once >> /home/zeus/nas_workstation_monitor.log 2>&1
 ```
 
 ### Bash Functions Setup
@@ -375,6 +496,7 @@ source ~/.bashrc
 nas_status
 nas_reliability
 nas_dbcheck
+nas_db_export
 ```
 
 ## Monitoring
@@ -388,131 +510,49 @@ The system will:
 - Track all checks in SQLite database
 - Keep 7 days (168 hours) of history by default
 - Auto-cleanup old records to prevent database growth
-- Send email alerts for persistent issues
-
-## Troubleshooting
-
-### Common Issues
-
-**"No module named 'tomli'"**
-```bash
-# Python 3.9-3.10 needs tomli package
-pip install tomli --break-system-packages
-
-# Or use system package manager
-sudo dnf install python3-tomli
-```
-
-**"Config file not found"**
-```bash
-# Specify full path
-python3 nas_monitor.py --config /home/zeus/nas-workstation-monitor/nas_monitor.toml
-```
-
-**"Permission denied" on SSH**
-```bash
-# Verify SSH key access
-ssh adam echo "test"
-
-# If fails, copy SSH key
-ssh-copy-id adam
-```
-
-**Database Shows No Records**
-```bash
-# Check if database was created
-ls -lh ~/nas_workstation_monitor.db
-
-# Run monitor once to populate
-python3 nas_monitor.py --once --verbose
-
-# Check record counts
-sqlite3 ~/nas_workstation_monitor.db "SELECT COUNT(*) FROM workstation_mount_status;"
-```
-
-**Workstation Shows Offline But Is Online**
-```bash
-# Check if ICMP is blocked (ping fails but SSH works)
-ping -c 1 workstation
-ssh workstation echo "test"
-
-# If ping blocked, allow ICMP from monitoring host on target workstation:
-ssh workstation "sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=<monitoring_host_IP> accept'"
-ssh workstation "sudo firewall-cmd --reload"
-```
-
-### Database Configuration Issues
-
-**Retention Period Not Matching Config File**
-```bash
-# Check current database setting
-nas_config
-
-# Update database to match TOML config (168 hours = 7 days)
-sqlite3 ~/nas_workstation_monitor.db "UPDATE monitor_config SET keep_hours = 168 WHERE id = 1;"
-
-# Verify the change
-nas_dbcheck
-```
-
-**User Lists Not Showing**
-```bash
-# Check if user data is being captured
-sqlite3 ~/nas_workstation_monitor.db "SELECT workstation, active_users, user_list FROM workstation_status WHERE active_users > 0;"
-
-# If data exists but not showing in nas_status, recreate the view
-sqlite3 ~/nas_workstation_monitor.db << 'SQL'
-DROP VIEW IF EXISTS current_workstation_summary;
-SQL
-
-# Then re-run monitor to recreate from schema
-python3 nas_monitor.py --once
-```
-
-### Logs
-
-```bash
-# View monitor log
-tail -f /home/zeus/nas_workstation_monitor.log
-
-# Check for errors
-grep -i error /home/zeus/nas_workstation_monitor.log
-
-# View recent monitoring runs
-tail -100 /home/zeus/nas_workstation_monitor.log
-```
-
-### Database Queries
-
-```bash
-# Check database configuration
-sqlite3 ~/nas_workstation_monitor.db "SELECT * FROM monitor_config;"
-
-# View recent mount checks with user info
-sqlite3 ~/nas_workstation_monitor.db "SELECT m.timestamp, m.workstation, m.mount_point, m.status, w.user_list FROM workstation_mount_status m LEFT JOIN workstation_status w ON m.workstation = w.workstation ORDER BY m.timestamp DESC LIMIT 20;"
-
-# Check workstation reliability
-sqlite3 ~/nas_workstation_monitor.db "SELECT * FROM workstation_reliability;"
-
-# View all tables and views
-sqlite3 ~/nas_workstation_monitor.db ".tables"
-
-# Show which users are currently logged in
-sqlite3 ~/nas_workstation_monitor.db "SELECT workstation, active_users, user_list FROM workstation_status WHERE active_users > 0;"
-```
+- Send email alerts during business hours only
+- Log off-hours issues for morning summary
 
 ## Credits
 
-- Utility modules adapted from [hpclib](https://github.com/georgeflanagin/hpclib) by George Flanagin
-- University of Richmond HPC Team
-
-## License
-
-MIT License - See LICENSE file for details
+- **Author**: University of Richmond HPC Team
+- **Maintainer**: jtonini@richmond.edu, hpc@richmond.edu
+- **Utility modules**: Adapted from hpclib by George Flanagin
+- **License**: MIT
 
 ## Support
 
-For issues or questions:
+For issues, questions, or feature requests:
 - Email: hpc@richmond.edu
-- Create an issue on GitHub: https://github.com/jtonini/nas-workstation-monitor/issues
+- GitHub: https://github.com/jtonini/nas-workstation-monitor
 
+## Version History
+
+- **v0.1** (2025-10-27): Initial release
+  - Basic monitoring and alerting
+  - Database tracking with SQLite
+  - Email notifications
+  - User activity tracking
+
+- **v0.2** (2025-11-03): Smart alerting
+  - Off-hours suppression (6 PM - 6 AM)
+  - Morning summary emails (6 AM)
+  - Improved email logic
+
+- **v0.3** (2025-11-03): Enhanced failure tracking
+  - Failure duration display (e.g., "2m 34s", "1h 15m")
+  - 7-day failure history in `nas_failures`
+  - Better visibility into mount problems
+
+- **v0.4** (2025-11-05): Database export
+  - New `nas_db_export` function
+  - Tab-delimited TSV format
+  - Compatible with Excel, R, Python
+  - Timestamped export directories
+
+- **v0.5** (2025-11-06): Performance and cleanup
+  - Timestamp indexes for fast queries
+  - Automatic cleanup of resolved failures (>7 days)
+  - Direct DELETE queries (sub-second cleanup)
+  - Complete documentation (README, help file)
+  - Bug fixes (zombie processes, SQL queries, bash functions)
