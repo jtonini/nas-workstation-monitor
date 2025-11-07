@@ -395,6 +395,31 @@ SQL
 # USAGE:
 #   nas_help
 ################################################################################
+################################################################################
+# nas_db_export - Export database to tab-delimited TSV files
+#
+# Creates a timestamped directory with all database tables and views exported
+# to tab-delimited format compatible with Excel, R, and Python.
+#
+# OUTPUT:
+#   Creates ~/nas_monitor_export_YYYYMMDD_HHMMSS/ containing:
+#   - Raw tables (workstation_mount_status.tsv, mount_failures.tsv, etc.)
+#   - Summary views (current_status_summary.tsv, reliability_summary.tsv)
+#   - README.txt with usage instructions
+#
+# USAGE:
+#   nas_db_export
+#
+# EXAMPLES:
+#   nas_db_export                    # Export all data
+#   # Then open in Excel, or:
+#   # R: data <- read.delim("~/nas_monitor_export_*/workstation_mount_status.tsv")
+#   # Python: pd.read_csv("~/nas_monitor_export_*/workstation_mount_status.tsv", sep="\t")
+################################################################################
+function nas_db_export() {
+    bash ${NAS_MONITOR_DIR}/nas_db_export.sh "$@"
+}
+
 function nas_help() {
     echo "========================================================================"
     echo "NAS Monitor Shell Functions - Help"
@@ -412,6 +437,7 @@ function nas_help() {
     echo "  nas_software             Show software availability"
     echo "  nas_recent               Show recent failures (24 hours)"
     echo "  nas_config               Show database configuration"
+  nas_db_export            Export database to tab-delimited TSV files
     echo "  nas_help                 Show this help message"
     echo ""
     echo "DATABASE CHECKS:"
