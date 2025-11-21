@@ -85,7 +85,7 @@ workstations = [
     {host = 'boyi', mounts = ['/usr/local/chem.sw']},
     {host = 'camryn', mounts = ['/usr/local/chem.sw']},
     {host = 'cooper', mounts = ['/usr/local/chem.sw']},
-    {host = 'evan', mounts = ['/usr/local/chem.sw']},
+#   {host = 'evan', mounts = ['/usr/local/chem.sw']}, # retired on Nov 20, 2025
     {host = 'hamilton', mounts = ['/usr/local/chem.sw']},
     {host = 'irene2', mounts = ['/usr/local/chem.sw']},
     {host = 'josh', mounts = ['/usr/local/chem.sw']},
