@@ -30,30 +30,10 @@ smtp_port = 25
 ########################################################################
 # Monitoring behavior
 ########################################################################
-
-###
-# Number of seconds between monitoring runs (3600 = hourly)
-###
 time_interval = 3600
-
-###
-# Attempt to remount when mount issues detected
-###
 attempt_fix = true
-
-###
-# Send email notifications when issues found
-###
 send_notifications = true
-
-###
-# Track active users during checks
-###
 track_users = true
-
-###
-# Check for mount-related processes
-###
 check_processes = true
 
 ########################################################################
@@ -61,8 +41,6 @@ check_processes = true
 ########################################################################
 ssh_timeout = 30
 ssh_config_file = '~/.ssh/config'
-
-# SSH connection options
 ssh_options = [
     '-o', 'ConnectTimeout=10',
     '-o', 'StrictHostKeyChecking=no',
@@ -71,199 +49,58 @@ ssh_options = [
 ]
 
 ########################################################################
-# NAS Server Definitions
+# Chemistry workstations to monitor
 ########################################################################
-# Parish Lab NAS infrastructure
-########################################################################
-
-[nas_servers.trueuser]
-hostname = '141.166.186.35'
-aliases = ['nas0']
-description = 'Small NAS from which we serve /usr/local'
-capacity = '4TB (3x2 RAID 5)'
-location = 'Alpha Wulf Room'
-poolname = 'usrlocal'
-notes = 'Files are in usrlocal/8, usrlocal/9, etc.'
-critical = true
-monitor_health = true
-
-[nas_servers.franksinatra]
-hostname = '141.166.186.1'
-aliases = ['nas4']
-description = 'Rack mount NAS for research data'
-capacity = '196TB (12x18 RAID 5)'
-location = 'Abrash Lab'
-poolname = 'everything'
-critical = true
-monitor_health = true
-
-[nas_servers.sarahvaughan]
-hostname = '141.166.222.28'
-aliases = ['nas2']
-description = 'Storage for community $HOME dirs and daily backup'
-capacity = '96TB (8x16 RAID 5)'
-location = 'Laser Lab'
-poolname = 'chem1'
-critical = false  # Not currently used for workstation mounts
-monitor_health = false
-
-[nas_servers.natkingcole]
-hostname = '141.166.223.243'
-aliases = ['nas3']
-description = 'Rack mount NAS'
-capacity = '176TB (12x16 RAID 5)'
-location = 'Laser Lab'
-poolname = 'everything'
-critical = false  # Contains spydur-files recovery
-monitor_health = false
-
-[nas_servers.oldnas]
-hostname = '141.166.185.239'
-aliases = ['nas1']
-description = 'Old NAS, no longer in regular use'
-capacity = 'Unknown'
-location = 'Alpha Wulf Room'
-poolname = 'Unknown'
-critical = false
-monitor_health = false
-retired = true
-
-########################################################################
-# Mount Point Definitions
-########################################################################
-# All workstations share these mount points
-# Now linked to specific NAS servers defined above
+# Back to simple format that the script expects
+# Now includes all 5 mount points for each workstation
 ########################################################################
 
-[mounts.chem_sw]
-path = '/usr/local/chem.sw'
-nas_server = 'trueuser'  # References nas_servers.trueuser
-nfs_server = '141.166.186.35'
-export = '/mnt/usrlocal/8'
-critical = true
-description = 'Chemistry software repository'
-verify_software = ['amber', 'Columbus', 'gaussian']
-
-[mounts.intel]
-path = '/opt/intel'
-nas_server = 'trueuser'
-nfs_server = '141.166.186.35'
-export = '/mnt/usrlocal/intel-tools'
-critical = true
-description = 'Intel compilers and tools'
-verify_software = []
-
-[mounts.backups]
-path = '/backups'
-nas_server = 'franksinatra'
-nfs_server = '141.166.186.1'
-export = '/mnt/everything/backup-testing'
-critical = true
-description = 'Workstation backups'
-verify_software = []
-
-[mounts.logP]
-path = '/franksinatra/logP'
-nas_server = 'franksinatra'
-nfs_server = '141.166.186.1'
-export = '/mnt/everything/logP'
-critical = false
-description = 'logP research data'
-verify_software = []
-
-[mounts.HIV_flaps]
-path = '/franksinatra/HIV_flaps'
-nas_server = 'franksinatra'
-nfs_server = '141.166.186.1'
-export = '/mnt/everything/HIV_flaps'
-critical = false
-description = 'HIV flaps research data'
-verify_software = []
-
-########################################################################
-# Mount Groups
-########################################################################
-# Since all workstations have the same mounts, we have one standard group
-########################################################################
-
-[mount_groups]
-# Standard configuration for all chemistry workstations
-standard = ['chem_sw', 'intel', 'backups', 'logP', 'HIV_flaps']
-
-########################################################################
-# Workstation Definitions
-########################################################################
-# All active chemistry workstations with standard mount configuration
-########################################################################
-
-[[workstations.active]]
-mount_group = 'standard'
-hosts = [
-    'aamy',
-    'adam',
-    'alexis',
-    'boyi',
-    'camryn',
-    'cooper',
-    'hamilton',
-    'irene2',
-    'josh',
-    'justin',
-    'kevin',
-    'khanh',
-    'mayer',
-    'michael',
-    'sarah',
-    'thais'
+workstations = [
+    {host = 'aamy', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'adam', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'alexis', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'boyi', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'camryn', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'cooper', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+#   {host = 'evan', mounts = ['/usr/local/chem.sw']}, # retired on Nov 21, 2024
+    {host = 'hamilton', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'irene2', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'josh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'justin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'kevin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'khanh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'mayer', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'michael', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'sarah', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'thais', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']}
 ]
 
 ########################################################################
-# Retired/Decommissioned Workstations
+# Critical software to verify on mount point
 ########################################################################
+critical_software = [
+    {mount = '/usr/local/chem.sw', software = ['amber', 'Columbus', 'gaussian']},
+    {mount = '/opt/intel', software = []},
+    {mount = '/backups', software = []},
+    {mount = '/franksinatra/logP', software = []},
+    {mount = '/franksinatra/HIV_flaps', software = []}
+]
 
-[[retired_workstations]]
-host = 'evan'
-date = '2024-11-21'
-reason = 'Hardware failure'
-last_mount_group = 'standard'
-
 ########################################################################
-# Notification Suppression Settings
+# Off-hours notification suppression
 ########################################################################
-# Control when email notifications should be suppressed
-# Monitoring continues but emails are held until allowed hours
-########################################################################
-
-# Weekday off-hours suppression (every day 6 PM - 6 AM)
 off_hours_start = 18  # 6 PM
 off_hours_end = 6     # 6 AM
 
 # Weekend suppression (Friday 6 PM through Monday 6 AM)
-# When enabled, no notifications are sent during the entire weekend
 suppress_weekends = true
-
-# If suppress_weekends is true, these settings define the weekend period
 weekend_start_day = 'Friday'
-weekend_start_hour = 18  # 6 PM Friday
-weekend_end_day = 'Monday'  
-weekend_end_hour = 6  # 6 AM Monday
-
-# Summary notification settings
-# Send a summary of suppressed issues when entering allowed hours
-send_summary_on_monday = true
-summary_time = 6  # 6 AM Monday - send weekend summary
+weekend_start_hour = 18
+weekend_end_day = 'Monday'
+weekend_end_hour = 6
 
 ########################################################################
 # Database cleanup configuration
 ########################################################################
-
-###
-# Hours of history to keep in database (168 = 7 days)
-###
 keep_hours = 168
-
-###
-# Aggressive cleanup mode removes ALL old data including unresolved issues
-# Standard mode (false) keeps unresolved issues regardless of age
-###
 aggressive_cleanup = false
