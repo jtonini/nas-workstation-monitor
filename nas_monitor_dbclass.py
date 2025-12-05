@@ -229,7 +229,7 @@ class NASMonitorDB:
             
             cursor.execute('''
                 INSERT OR REPLACE INTO workstation_status
-                (workstation, is_online, connectivity_status, last_check, 
+                (workstation, is_online, connectivity_status, last_seen, 
                  active_users, user_list, mount_status, checked_by)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
             ''', (workstation, is_online, connectivity or 'unknown',
