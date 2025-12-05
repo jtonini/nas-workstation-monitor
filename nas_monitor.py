@@ -17,7 +17,7 @@ import pathlib
 import socket
 import sys
 import time
-import toml
+import tomli as toml
 
 # Import hpclib modules
 from dorunrun import dorunrun, ExitCode
