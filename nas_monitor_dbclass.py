@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NAS Monitor Database Class - Enhanced Version 2.0
+NAS Monitor Database Class
 Database operations for NAS mount monitoring
-Now includes connectivity issue tracking separate from mount failures
+Fixed version with correct column names and placeholder counts
 """
 
-import os
 import sqlite3
 import datetime
+import os
 from typing import List, Tuple, Optional, Dict, Any
 from pathlib import Path
 from contextlib import contextmanager
 
 class NASMonitorDB:
     """
-    Database interface for NAS mount monitoring with enhanced error tracking.
-    
-    Separates connectivity issues from mount failures for better diagnostics.
+    Database interface for NAS mount monitoring.
     """
     
     def __init__(self, db_path: str, schema_file: str = None):
@@ -45,7 +43,7 @@ class NASMonitorDB:
             conn.close()
     
     def _init_database(self):
-        """Initialize database with enhanced schema including connectivity tracking."""
+        """Initialize database with schema."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
@@ -78,22 +76,6 @@ class NASMonitorDB:
                 CREATE INDEX IF NOT EXISTS idx_connectivity_workstation_time
                 ON connectivity_issues(workstation, timestamp DESC)
             ''')
-            
-            # Add connectivity status to workstation_status if not exists
-            cursor.execute("PRAGMA table_info(workstation_status)")
-            columns = [col[1] for col in cursor.fetchall()]
-            
-            if 'connectivity_status' not in columns:
-                cursor.execute('''
-                    ALTER TABLE workstation_status 
-                    ADD COLUMN connectivity_status TEXT DEFAULT 'unknown'
-                ''')
-            
-            if 'last_connectivity_issue' not in columns:
-                cursor.execute('''
-                    ALTER TABLE workstation_status 
-                    ADD COLUMN last_connectivity_issue DATETIME
-                ''')
             
             conn.commit()
     
@@ -210,10 +192,9 @@ class NASMonitorDB:
                                  connectivity: str = None,
                                  active_users: int = 0,
                                  user_list: str = None,
-                                 mount_status: str = None,
                                  checked_by: str = None):
         """
-        Update or insert workstation status with connectivity info.
+        Update or insert workstation status.
         
         Args:
             workstation: Hostname
@@ -221,7 +202,6 @@ class NASMonitorDB:
             connectivity: Connectivity status (connected, ssh_failed, unreachable)
             active_users: Number of active users
             user_list: Comma-separated list of users
-            mount_status: Overall mount status
             checked_by: User running the check
         """
         with self._get_connection() as conn:
@@ -229,38 +209,33 @@ class NASMonitorDB:
             
             cursor.execute('''
                 INSERT OR REPLACE INTO workstation_status
-                (workstation, is_online, connectivity_status, last_seen, 
-                 active_users, user_list, mount_status, checked_by)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+                (workstation, is_online, connectivity_status, last_seen,
+                 active_users, user_list, checked_by)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
             ''', (workstation, is_online, connectivity or 'unknown',
-                  active_users, user_list, mount_status, checked_by))
+                  active_users, user_list, checked_by))
             
             conn.commit()
     
     def record_software_check(self, workstation: str, software_name: str,
-                            mount_point: str, is_accessible: bool,
-                            error_message: str = None):
+                            mount_point: str, is_accessible: bool):
         """
         Record software accessibility check.
         
         Args:
             workstation: Hostname
             software_name: Name of software
-            mount_point: Full path to software
+            mount_point: Mount point where software is located
             is_accessible: Whether software is accessible
-            error_message: Optional error message
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            
-            # Get check time
-            start_time = datetime.datetime.now()
             
             cursor.execute('''
                 INSERT INTO software_availability
                 (workstation, software_name, mount_point, is_accessible,
                  check_time_ms)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
             ''', (workstation, software_name, mount_point, is_accessible,
                   0))
             
@@ -280,7 +255,7 @@ class NASMonitorDB:
             workstation = 'unknown'
             issue_type = 'general'
             
-            # Simple parsing - you might want to enhance this
+            # Simple parsing
             if ':' in issue_details:
                 parts = issue_details.split(':', 1)
                 workstation = parts[0].strip()
