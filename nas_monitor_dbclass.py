@@ -259,10 +259,10 @@ class NASMonitorDB:
             cursor.execute('''
                 INSERT INTO software_availability
                 (workstation, software_name, mount_point, is_accessible,
-                 check_time_ms, error_message)
+                 check_time_ms)
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (workstation, software_name, mount_point, is_accessible,
-                  0, error_message))
+                  0))
             
             conn.commit()
     

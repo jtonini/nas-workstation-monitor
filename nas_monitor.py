@@ -216,12 +216,12 @@ def verify_software_access(workstation: str, mount_point: str, software_list: Li
             results[software] = accessible
             
             # Log to database (using mount_point instead of software_path)
-            db.record_software_check(workstation, software, mount_point, accessible)
+#            db.record_software_check(workstation, software, mount_point, accessible)
             
         except Exception as e:
             logger.error(f"Failed to check {software} on {workstation}: {e}")
             results[software] = False
-            db.record_software_check(workstation, software, mount_point, False)
+#            db.record_software_check(workstation, software, mount_point, False)
     
     return results
 
