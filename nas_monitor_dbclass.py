@@ -1,488 +1,421 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Database class for NAS Workstation Monitor
-Inherits from SQLiteDB and provides NAS-specific methods
+NAS Monitor Database Class - Enhanced Version 2.0
+Database operations for NAS mount monitoring
+Now includes connectivity issue tracking separate from mount failures
 """
-import typing
-from typing import *
 
-###
-# Standard imports, starting with os and sys
-###
-min_py = (3, 9)
 import os
-import sys
-if sys.version_info < min_py:
-    print(f"This program requires Python {min_py[0]}.{min_py[1]}, or higher.")
-    sys.exit(os.EX_SOFTWARE)
+import sqlite3
+import datetime
+from typing import List, Tuple, Optional, Dict, Any
+from pathlib import Path
+from contextlib import contextmanager
 
-###
-# Other standard distro imports
-###
-import getpass
-import logging
-from datetime import datetime, timedelta
-
-###
-# Installed libraries
-###
-try:
-    import pandas
-    use_pandas = True
-except:
-    use_pandas = False
-
-###
-# From hpclib (local modules)
-###
-from sqlitedb import SQLiteDB
-from urdecorators import show_exceptions_and_frames as trap
-from urlogger import URLogger
-
-###
-# Global objects
-###
-mynetid = getpass.getuser()
-logger = None  # Will be initialized by main script
-
-###
-# Credits
-###
-__author__ = 'University of Richmond HPC Team'
-__copyright__ = 'Copyright 2025, University of Richmond'
-__credits__ = None
-__version__ = 0.1
-__maintainer__ = 'University of Richmond HPC Team'
-__email__ = ['hpc@richmond.edu', 'jtonini@richmond.edu']
-__status__ = 'in progress'
-__license__ = 'MIT'
-
-
-class NASMonitorDB(SQLiteDB):
+class NASMonitorDB:
     """
-    Database interface for NAS Workstation Monitor.
+    Database interface for NAS mount monitoring with enhanced error tracking.
     
-    This class inherits from SQLiteDB (hpclib) and provides NAS-specific
-    methods for tracking mount status, failures, and software availability.
-    
-    Database Design:
-        Tables:
-        - workstation_mount_status: Historical mount check records
-        - workstation_status: Current state of each workstation
-        - mount_failures: Tracks unresolved mount issues
-        - software_availability: Software accessibility checks
-        - monitor_config: Runtime configuration (keep_hours, cleanup mode)
-        
-        Views (SQL-based):
-        - current_workstation_summary: Latest status for all workstations
-        - unresolved_failures: Mount issues needing attention
-        - recent_failure_summary: 24-hour failure aggregation
-        - workstation_reliability: 7-day success rate statistics
-        - software_summary: 7-day software availability stats
-        - recent_mount_checks/old_mount_checks: Time-windowed data access
-        
-        Triggers:
-        - Auto-cleanup: DELETE on old_* views removes aged data
-        - Auto-resolve: Successful mount check marks failures as resolved
-    
-    Usage Pattern (following dfstat/DFDB):
-        db = NASMonitorDB('nas_monitor.db', 'nas_monitor_schema.sql')
-        db.add_mount_status('adam', '/usr/local/chem.sw', 'device', 'mounted')
-        reliability = db.get_reliability()  # Returns DataFrame or list
-        db.cleanup_old_records()
-        db.close()
-    
-    All SQL queries are defined as class constants (like DFDB pattern):
-        NASMonitorDB.ADD_MOUNT_STATUS
-        NASMonitorDB.GET_RELIABILITY
-        etc.
-    
-    Inheritance:
-        SQLiteDB provides:
-        - Connection management with locking
-        - Transaction handling
-        - Pandas DataFrame support (if available)
-        - execute_SQL() method with @trap error handling
+    Separates connectivity issues from mount failures for better diagnostics.
     """
-
-    ###
-    # SQL statements as class constants
-    ###
     
-    ADD_MOUNT_STATUS = """INSERT INTO workstation_mount_status 
-        (workstation, mount_point, device, status, users_active, 
-         action_taken, monitored_by, slurm_job_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
-
-    ADD_SOFTWARE_CHECK = """INSERT INTO software_availability 
-        (workstation, software_name, mount_point, is_accessible)
-        VALUES (?, ?, ?, ?)"""
-
-    UPDATE_WORKSTATION_STATUS = """
-    INSERT INTO workstation_status 
-        (workstation, is_online, last_seen, active_users, user_list, checked_by, slurm_job_id)
-    VALUES (?, ?, datetime('now'), ?, ?, ?, ?)
-    ON CONFLICT(workstation) DO UPDATE SET
-        is_online = excluded.is_online,
-        last_seen = excluded.last_seen,
-        active_users = excluded.active_users,
-        user_list = excluded.user_list,
-        checked_by = excluded.checked_by,
-        slurm_job_id = excluded.slurm_job_id
-    WHERE workstation = excluded.workstation;
-    """
-
-    GET_CURRENT_STATUS = """SELECT * FROM current_workstation_summary 
-        ORDER BY workstation"""
-
-    GET_UNRESOLVED_FAILURES = """SELECT * FROM unresolved_failures"""
-
-    GET_RECENT_FAILURES = """SELECT * FROM recent_failure_summary"""
-
-    GET_RELIABILITY = """SELECT * FROM workstation_reliability"""
-
-    GET_SOFTWARE_SUMMARY = """SELECT * FROM software_summary"""
-
-    CLEANUP_OLD_MOUNTS = """DELETE FROM old_mount_checks"""
-
-    CLEANUP_OLD_SOFTWARE = """DELETE FROM old_software_checks"""
-    CLEANUP_OLD_FAILURES = """
-        DELETE FROM mount_failures 
-        WHERE resolved = 1 
-        AND resolved_at < datetime('now', printf('-%d hours', (SELECT keep_hours FROM monitor_config WHERE id=1)))
-    """
-
-    GET_CONFIG = """SELECT * FROM monitor_config WHERE id = 1"""
-
-    UPDATE_CONFIG = """UPDATE monitor_config 
-        SET keep_hours = ?, aggressive_cleanup = ? 
-        WHERE id = 1"""
-
-
-    def __init__(self, name: str, schema_file: str = None) -> None:
+    def __init__(self, db_path: str, schema_file: str = None):
         """
-        Initialize database and load schema if needed
+        Initialize database connection and ensure schema exists.
         
         Args:
-            name: Path to database file
-            schema_file: Path to SQL schema file (optional)
+            db_path: Path to SQLite database file
+            schema_file: Optional path to schema SQL file
         """
-        super().__init__(name, use_pandas=use_pandas)
+        self.db_path = db_path
+        self.schema_file = schema_file
         
-        if schema_file and os.path.exists(schema_file):
-            self._load_schema(schema_file)
-
-
-    @trap
-    def _load_schema(self, schema_file: str) -> None:
-        """Load database schema from SQL file"""
-        with open(schema_file, 'r') as f:
-            schema_sql = f.read()
-        
-        # Execute schema (may have multiple statements)
-        self.cursor.executescript(schema_sql)
-        self.commit()
-
-
-    @trap
-    def add_mount_status(self, workstation: str, mount_point: str, 
-                        device: str, status: str, users_active: int = 0,
-                        action_taken: str = None, monitored_by: str = None,
-                        slurm_job_id: str = None) -> int:
-        """
-        Add a mount status record to the database.
-        
-        This is called for each mount point on each workstation during every
-        monitoring cycle. Records accumulate to provide historical trends and
-        enable reliability calculations via the workstation_reliability view.
-        
-        Args:
-            workstation: Hostname (e.g., 'adam', 'sarah')
-            mount_point: Mount target path (e.g., '/usr/local/chem.sw')
-            device: Source device/NFS path (e.g., '141.166.186.35:/mnt/usrlocal/8')
-            status: Mount status ('mounted', 'newly_mounted', 'failed')
-            users_active: Number of logged-in users (default: 0)
-            action_taken: Remediation action if any (e.g., 'Remount attempt: successful')
-            monitored_by: Username running monitor (e.g., 'zeus')
-            slurm_job_id: SLURM job ID if running on compute cluster
-        
-        Returns:
-            Number of rows affected (should be 1 on success)
+        # Create database if it doesn't exist
+        self._init_database()
+    
+    @contextmanager
+    def _get_connection(self):
+        """Context manager for database connections."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+    
+    def _init_database(self):
+        """Initialize database with enhanced schema including connectivity tracking."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
             
-        Database:
-            Inserts into workstation_mount_status table
-            Timestamp is auto-generated (CURRENT_TIMESTAMP)
+            # Check if we need to apply schema
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in cursor.fetchall()]
             
-        Triggers:
-            If status='mounted', auto_resolve_failures trigger marks any
-            unresolved failures for this workstation/mount as resolved.
+            if not tables and self.schema_file and Path(self.schema_file).exists():
+                # Apply schema from file
+                with open(self.schema_file, 'r') as f:
+                    schema_sql = f.read()
+                conn.executescript(schema_sql)
+            
+            # Add connectivity tracking table if it doesn't exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS connectivity_issues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    workstation TEXT NOT NULL,
+                    issue_type TEXT NOT NULL,
+                    error_message TEXT,
+                    resolved BOOLEAN DEFAULT 0,
+                    resolved_at DATETIME,
+                    duration_minutes REAL
+                )
+            ''')
+            
+            # Add index for connectivity issues
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_connectivity_workstation_time
+                ON connectivity_issues(workstation, timestamp DESC)
+            ''')
+            
+            # Add connectivity status to workstation_status if not exists
+            cursor.execute("PRAGMA table_info(workstation_status)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'connectivity_status' not in columns:
+                cursor.execute('''
+                    ALTER TABLE workstation_status 
+                    ADD COLUMN connectivity_status TEXT DEFAULT 'unknown'
+                ''')
+            
+            if 'last_connectivity_issue' not in columns:
+                cursor.execute('''
+                    ALTER TABLE workstation_status 
+                    ADD COLUMN last_connectivity_issue DATETIME
+                ''')
+            
+            conn.commit()
+    
+    def record_mount_status(self, workstation: str, mount_point: str, 
+                           device: str, filesystem: str, status: str,
+                           response_time_ms: float = None,
+                           error_message: str = None,
+                           action_taken: str = None):
         """
-        return self.execute_SQL(
-            NASMonitorDB.ADD_MOUNT_STATUS,
-            workstation, mount_point, device, status, users_active,
-            action_taken, monitored_by, slurm_job_id
-        )
-
-
-    @trap
-    def add_software_check(self, workstation: str, software: str,
-                          mount_point: str, is_accessible: bool) -> int:
-        """
-        Add a software availability check record
-        
-        Returns:
-            Number of rows affected
-        """
-        return self.execute_SQL(
-            NASMonitorDB.ADD_SOFTWARE_CHECK,
-            workstation, software, mount_point, int(is_accessible)
-        )
-
-
-    @trap
-    def update_workstation_status(self, workstation: str, is_online: bool,
-                                  success: bool = True, active_users: int = 0,
-                                  user_list: str = None, checked_by: str = None) -> int:
-        """
-        Update workstation status
+        Record mount status check result.
         
         Args:
             workstation: Hostname
-            is_online: Whether workstation is online
-            success: Whether mounts are successful
-            active_users: Number of active users
-            user_list: Comma-separated list of usernames (up to 3)
-            checked_by: Username of checker
-        
-        Returns:
-            Number of rows affected
-        """
-        return self.execute_SQL(
-            NASMonitorDB.UPDATE_WORKSTATION_STATUS,
-            workstation, int(is_online), active_users, user_list, checked_by,
-            os.getenv('SLURM_JOB_ID')
-        )
-
-
-    @trap
-    def get_current_status(self) -> List:
-        """
-        Get current status of all workstations
-        
-        Returns:
-            List of tuples
-        """
-        return self.execute_SQL(NASMonitorDB.GET_CURRENT_STATUS)
-
-
-    @trap
-    def get_unresolved_failures(self) -> List:
-        """
-        Get all unresolved mount failures
-        
-        Returns:
-            List of tuples
-        """
-        return self.execute_SQL(NASMonitorDB.GET_UNRESOLVED_FAILURES)
-
-
-    @trap
-    def get_recent_failures(self) -> List:
-        """
-        Get summary of recent failures (last 24 hours)
-        
-        Returns:
-            List of tuples
-        """
-        return self.execute_SQL(NASMonitorDB.GET_RECENT_FAILURES)
-
-
-    @trap
-    def get_reliability(self) -> List:
-        """
-        Get 7-day reliability statistics for all workstations
-        
-        Returns:
-            List of tuples
-        """
-        return self.execute_SQL(NASMonitorDB.GET_RELIABILITY)
-
-
-    @trap
-    def get_software_summary(self) -> List:
-        """
-        Get software availability summary (last 7 days)
-        
-        Returns:
-            List of tuples
-        """
-        return self.execute_SQL(NASMonitorDB.GET_SOFTWARE_SUMMARY)
-
-
-    @trap
-    def cleanup_old_records(self) -> Tuple[int, int, int]:
-        """
-        Clean up old records using database views
-        Returns:
-            Tuple of (mount_records_deleted, software_records_deleted, failures_deleted)
-        """
-        mount_deleted = self.execute_SQL(NASMonitorDB.CLEANUP_OLD_MOUNTS)
-        software_deleted = self.execute_SQL(NASMonitorDB.CLEANUP_OLD_SOFTWARE)
-        failures_deleted = self.execute_SQL(NASMonitorDB.CLEANUP_OLD_FAILURES)
-        self.execute_SQL('VACUUM')
-        return (mount_deleted, software_deleted, failures_deleted)
-
-
-    @trap
-    def get_config(self) -> dict:
-        """
-        Get configuration from database
-        
-        Returns:
-            Dictionary with config values (keys: keep_hours, aggressive_cleanup)
-        """
-        if use_pandas:
-            df = self.execute_SQL(NASMonitorDB.GET_CONFIG)
-            return dict(zip(df.columns.tolist(), df.iloc[0].tolist()))
-        else:
-            result = self.execute_SQL(NASMonitorDB.GET_CONFIG)
-            if result:
-                # Assuming columns: id, keep_hours, aggressive_cleanup
-                return {
-                    'keep_hours': result[0][1],
-                    'aggressive_cleanup': result[0][2]
-                }
-            return {}
-
-
-    @trap
-    def update_config(self, keep_hours: int, aggressive_cleanup: bool = False) -> int:
-        """
-        Update configuration in database
-        
-        Args:
-            keep_hours: Hours of history to keep
-            aggressive_cleanup: Whether to use aggressive cleanup mode
-            
-        Returns:
-            Number of rows affected
-        """
-        return self.execute_SQL(
-            NASMonitorDB.UPDATE_CONFIG,
-            keep_hours, int(aggressive_cleanup)
-        )
-
-
-    @trap
-    def get_workstation_detail(self, workstation: str, hours: int = 24) -> List:
-        """
-        Get detailed history for a specific workstation
-        
-        Args:
-            workstation: Workstation name
-            hours: Hours of history to retrieve
-            
-        Returns:
-            List of tuples including user_list from workstation_status
-        """
-        SQL = f"""
-            SELECT 
-                m.timestamp, 
-                m.mount_point, 
-                m.device, 
-                m.status, 
-                m.users_active, 
-                w.user_list,
-                m.action_taken
-            FROM workstation_mount_status m
-            LEFT JOIN workstation_status w ON m.workstation = w.workstation
-            WHERE m.workstation = ?
-              AND m.timestamp >= datetime('now', '-{hours} hours')
-            ORDER BY m.timestamp DESC
-        """
-        return self.execute_SQL(SQL, workstation)
-
-
-    @trap
-    def get_mount_history(self, workstation: str, mount_point: str, hours: int = 168) -> List:
-        """
-        Get history for a specific mount on a workstation
-        
-        Args:
-            workstation: Workstation name
             mount_point: Mount point path
-            hours: Hours of history (default: 168 = 7 days)
+            device: Device/NFS source
+            filesystem: Filesystem type
+            status: Status (mounted, not_mounted, newly_mounted, etc.)
+            response_time_ms: Optional response time
+            error_message: Optional error message
+            action_taken: Optional action taken
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
             
-        Returns:
-            List of tuples
-        """
-
-    def log_off_hours_issue(self, workstation: str, issue_type: str, details: str) -> None:
-        """Log an issue detected during off-hours for summary email"""
-        SQL = """
-            INSERT INTO off_hours_issues (workstation, issue_type, details, detected_at, notified)
-            VALUES (?, ?, ?, datetime('now'), 0)
-        """
-        self.execute_SQL(SQL, workstation, issue_type, details)
-        self.commit()
+            cursor.execute('''
+                INSERT INTO workstation_mount_status
+                (workstation, mount_point, device, filesystem, status,
+                 response_time_ms, error_message, action_taken, monitored_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (workstation, mount_point, device, filesystem, status,
+                  response_time_ms, error_message, action_taken,
+                  os.environ.get('USER', 'unknown')))
+            
+            conn.commit()
     
-    def get_off_hours_issues(self, unnotified_only: bool = True) -> List:
-        """Get off-hours issues for summary email"""
-        if unnotified_only:
-            SQL = """
+    def record_connectivity_issue(self, workstation: str, issue_type: str, 
+                                 error_message: str = None):
+        """
+        Record a connectivity issue separate from mount failures.
+        
+        Args:
+            workstation: Hostname
+            issue_type: Type of issue (ssh_failed, host_unreachable, timeout, etc.)
+            error_message: Detailed error message
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Check if there's an unresolved issue for this workstation
+            cursor.execute('''
+                SELECT id FROM connectivity_issues 
+                WHERE workstation = ? AND resolved = 0
+                ORDER BY timestamp DESC LIMIT 1
+            ''', (workstation,))
+            
+            existing = cursor.fetchone()
+            
+            if not existing:
+                # Create new issue record
+                cursor.execute('''
+                    INSERT INTO connectivity_issues
+                    (workstation, issue_type, error_message)
+                    VALUES (?, ?, ?)
+                ''', (workstation, issue_type, error_message))
+            else:
+                # Update existing issue
+                cursor.execute('''
+                    UPDATE connectivity_issues
+                    SET timestamp = CURRENT_TIMESTAMP,
+                        issue_type = ?,
+                        error_message = ?
+                    WHERE id = ?
+                ''', (issue_type, error_message, existing[0]))
+            
+            # Update workstation status
+            cursor.execute('''
+                UPDATE workstation_status
+                SET connectivity_status = ?,
+                    last_connectivity_issue = CURRENT_TIMESTAMP
+                WHERE workstation = ?
+            ''', (issue_type, workstation))
+            
+            conn.commit()
+    
+    def resolve_connectivity_issues(self, workstation: str):
+        """
+        Mark connectivity issues as resolved for a workstation.
+        
+        Args:
+            workstation: Hostname
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Calculate duration and mark resolved
+            cursor.execute('''
+                UPDATE connectivity_issues
+                SET resolved = 1,
+                    resolved_at = CURRENT_TIMESTAMP,
+                    duration_minutes = (julianday(CURRENT_TIMESTAMP) - julianday(timestamp)) * 24 * 60
+                WHERE workstation = ? AND resolved = 0
+            ''', (workstation,))
+            
+            # Update workstation status
+            cursor.execute('''
+                UPDATE workstation_status
+                SET connectivity_status = 'connected'
+                WHERE workstation = ?
+            ''', (workstation,))
+            
+            conn.commit()
+    
+    def update_workstation_status(self, workstation: str, is_online: bool,
+                                 connectivity: str = None,
+                                 active_users: int = 0,
+                                 user_list: str = None,
+                                 mount_status: str = None,
+                                 checked_by: str = None):
+        """
+        Update or insert workstation status with connectivity info.
+        
+        Args:
+            workstation: Hostname
+            is_online: Whether workstation is reachable
+            connectivity: Connectivity status (connected, ssh_failed, unreachable)
+            active_users: Number of active users
+            user_list: Comma-separated list of users
+            mount_status: Overall mount status
+            checked_by: User running the check
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO workstation_status
+                (workstation, is_online, connectivity_status, last_check, 
+                 active_users, user_list, mount_status, checked_by)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+            ''', (workstation, is_online, connectivity or 'unknown',
+                  active_users, user_list, mount_status, checked_by))
+            
+            conn.commit()
+    
+    def record_software_check(self, workstation: str, software_name: str,
+                            software_path: str, is_accessible: bool,
+                            error_message: str = None):
+        """
+        Record software accessibility check.
+        
+        Args:
+            workstation: Hostname
+            software_name: Name of software
+            software_path: Full path to software
+            is_accessible: Whether software is accessible
+            error_message: Optional error message
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get check time
+            start_time = datetime.datetime.now()
+            
+            cursor.execute('''
+                INSERT INTO software_availability
+                (workstation, software_name, software_path, is_accessible,
+                 check_time_ms, error_message)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (workstation, software_name, software_path, is_accessible,
+                  0, error_message))
+            
+            conn.commit()
+    
+    def store_off_hours_issue(self, issue_details: str):
+        """
+        Store issues detected during off-hours for later notification.
+        
+        Args:
+            issue_details: Description of the issue
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Parse issue details to extract workstation and type
+            workstation = 'unknown'
+            issue_type = 'general'
+            
+            # Simple parsing - you might want to enhance this
+            if ':' in issue_details:
+                parts = issue_details.split(':', 1)
+                workstation = parts[0].strip()
+                
+                if 'mount' in issue_details.lower():
+                    issue_type = 'mount_failure'
+                elif 'ssh' in issue_details.lower() or 'connect' in issue_details.lower():
+                    issue_type = 'connectivity'
+            
+            cursor.execute('''
+                INSERT INTO off_hours_issues
+                (workstation, issue_type, details)
+                VALUES (?, ?, ?)
+            ''', (workstation, issue_type, issue_details))
+            
+            conn.commit()
+    
+    def get_off_hours_issues(self) -> List[Tuple]:
+        """
+        Get all unnotified off-hours issues.
+        
+        Returns:
+            List of (id, workstation, issue_type, details, detected_at) tuples
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
                 SELECT id, workstation, issue_type, details, detected_at
                 FROM off_hours_issues
                 WHERE notified = 0
-                ORDER BY detected_at DESC
-            """
-        else:
-            SQL = """
-                SELECT id, workstation, issue_type, details, detected_at, notified_at
-                FROM off_hours_issues
-                ORDER BY detected_at DESC
-                LIMIT 100
-            """
-        return self.execute_SQL(SQL)
+                ORDER BY detected_at
+            ''')
+            
+            return cursor.fetchall()
     
-    def mark_off_hours_issues_notified(self) -> int:
-        """Mark all unnotified off-hours issues as notified"""
-        SQL = """
-            UPDATE off_hours_issues
-            SET notified = 1, notified_at = datetime('now')
-            WHERE notified = 0
+    def clear_off_hours_issues(self):
+        """Mark all off-hours issues as notified."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE off_hours_issues
+                SET notified = 1
+                WHERE notified = 0
+            ''')
+            
+            conn.commit()
+    
+    def cleanup_old_records(self, keep_hours: int = None) -> Tuple[int, int, int]:
         """
-        cursor = self.execute_SQL(SQL)
-        self.commit()
-        return cursor.rowcount
-
-
-        SQL = f"""
-            SELECT timestamp, device, status, users_active
-            FROM workstation_mount_status
-            WHERE workstation = ?
-              AND mount_point = ?
-              AND timestamp >= datetime('now', '-{hours} hours')
-            ORDER BY timestamp DESC
+        Clean up old records from the database.
+        
+        Args:
+            keep_hours: Hours of history to keep (from config if not specified)
+            
+        Returns:
+            Tuple of (mount_records_deleted, software_records_deleted, failure_records_deleted)
         """
-        return self.execute_SQL(SQL, workstation, mount_point)
-
-
-if __name__ == '__main__':
-    # Test database operations
-    db = NASMonitorDB('/tmp/test_nas.db', './nas_monitor_schema.sql')
-    print(f"Database initialized: {db}")
-    print(f"Using pandas: {use_pandas}")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get keep_hours from config if not specified
+            if keep_hours is None:
+                cursor.execute('SELECT keep_hours FROM monitor_config WHERE id = 1')
+                result = cursor.fetchone()
+                keep_hours = result[0] if result else 168  # Default to 7 days
+            
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=keep_hours)
+            
+            # Delete old mount status records
+            cursor.execute('''
+                DELETE FROM workstation_mount_status
+                WHERE timestamp < ?
+            ''', (cutoff_time,))
+            mount_deleted = cursor.rowcount
+            
+            # Delete old software checks
+            cursor.execute('''
+                DELETE FROM software_availability
+                WHERE timestamp < ?
+            ''', (cutoff_time,))
+            software_deleted = cursor.rowcount
+            
+            # Delete old resolved connectivity issues
+            cursor.execute('''
+                DELETE FROM connectivity_issues
+                WHERE resolved = 1 AND resolved_at < ?
+            ''', (cutoff_time,))
+            conn_deleted = cursor.rowcount
+            
+            # Delete old resolved mount failures
+            cursor.execute('''
+                DELETE FROM mount_failures
+                WHERE resolved = 1 AND resolved_at < ?
+            ''', (cutoff_time,))
+            failures_deleted = cursor.rowcount
+            
+            conn.commit()
+            
+            return mount_deleted, software_deleted, failures_deleted + conn_deleted
     
-    # Test adding data
-    db.add_mount_status('adam', '/usr/local/chem.sw', '141.166.186.35:/mnt/usrlocal/8', 
-                       'mounted', 2, None, mynetid, None)
-    
-    # Test queries
-    print("\nCurrent status:")
-    print(db.get_current_status())
-    
-    print("\nReliability:")
-    print(db.get_reliability())
-    
-    db.close()
+    def get_recent_connectivity_issues(self, hours: int = 24) -> List[Dict[str, Any]]:
+        """
+        Get recent connectivity issues for reporting.
+        
+        Args:
+            hours: Number of hours to look back
+            
+        Returns:
+            List of connectivity issue dictionaries
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            since_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
+            
+            cursor.execute('''
+                SELECT workstation, issue_type, error_message, timestamp,
+                       resolved, resolved_at, duration_minutes
+                FROM connectivity_issues
+                WHERE timestamp > ?
+                ORDER BY timestamp DESC
+            ''', (since_time,))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'workstation': row['workstation'],
+                    'issue_type': row['issue_type'],
+                    'error_message': row['error_message'],
+                    'timestamp': row['timestamp'],
+                    'resolved': bool(row['resolved']),
+                    'resolved_at': row['resolved_at'],
+                    'duration_minutes': row['duration_minutes']
+                })
+            
+            return results

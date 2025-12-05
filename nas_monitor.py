@@ -1,717 +1,657 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NAS Workstation Mount Monitor
+NAS Workstation Mount Monitor - Enhanced Version 2.0
 Automated monitoring and maintenance of NAS mounts across lab workstations
+Now distinguishes between connectivity issues and actual mount failures
 """
 import typing
 from typing import *
 
 min_py = (3, 9)
 
-###
-# Standard imports, starting with os and sys
-###
-import os
-import sys
-if sys.version_info < min_py:
-    print(f"This program requires Python {min_py[0]}.{min_py[1]}, or higher.")
-    sys.exit(os.EX_SOFTWARE)
-
-###
-# Other standard distro imports
-###
 import argparse
-import contextlib
 import datetime
-import getpass
-import logging
-import signal
+import os
+import pathlib
 import socket
+import sys
 import time
-from pathlib import Path
+import toml
 
-###
-# Installed libraries (TOML parser)
-###
-try:
-    import tomllib  # Python 3.11+
-except ImportError:
-    try:
-        import tomli as tomllib  # Python 3.6-3.10
-    except ImportError:
-        print("ERROR: Neither tomllib nor tomli available. Install tomli:", file=sys.stderr)
-        print("  pip install tomli --break-system-packages", file=sys.stderr)
-        sys.exit(os.EX_SOFTWARE)
-
-###
-# From hpclib (git submodule)
-###
-import linuxutils
-from urdecorators import show_exceptions_and_frames as trap
-from urlogger import URLogger
-from dorunrun import dorunrun
-
-###
-# Local imports
-###
+# Import hpclib modules
+from dorunrun import dorunrun, ExitCode
+from linuxutils import *
 from nas_monitor_dbclass import NASMonitorDB
+from sqlitedb import SQLiteDB
+from urdecorators import trap
+from urlogger import URLogger
 
-###
-# Credits
-###
-__author__ = 'University of Richmond HPC Team'
-__copyright__ = 'Copyright 2025'
-__credits__ = None
-__version__ = 0.1
-__maintainer__ = 'University of Richmond HPC Team'
-__email__ = ['hpc@richmond.edu', 'jtonini@richmond.edu']
-__status__ = 'in progress'
-__license__ = 'MIT'
-
-
-def is_off_hours() -> bool:
-    """Check if current time is during off-hours (no email notifications)"""
-    global myconfig
-    
-    if not hasattr(myconfig, 'off_hours_start') or not hasattr(myconfig, 'off_hours_end'):
-        return False  # If not configured, never suppress
-    
-    current_hour = datetime.datetime.now().hour
-    start = myconfig.off_hours_start
-    end = myconfig.off_hours_end
-    
-    # Handle overnight periods (e.g., 19:00 to 05:00)
-    if start > end:
-        return current_hour >= start or current_hour < end
-    else:
-        return start <= current_hour < end
-
-
-mynetid = getpass.getuser()
-
-###
-# Global configuration, logger, and database
-# Loaded by load_config()
-###
+# Global variables
 myconfig = None
 logger = None
 db = None
 
-
 @trap
-def load_config(config_path: str) -> object:
-    """Load configuration from TOML file"""
-    if not os.path.exists(config_path):
-        print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
-        sys.exit(os.EX_NOINPUT)
-    
-    with open(config_path, 'rb') as f:
-        config_dict = tomllib.load(f)
-    
-    # Convert dict to object for dot notation access (like dfstat)
-    class Config:
-        def __init__(self, d):
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    setattr(self, key, Config(value))
-                else:
-                    setattr(self, key, value)
-    
-    return Config(config_dict)
-
-
-@trap
-def check_workstation_online(workstation: str) -> bool:
-    """Check if workstation is reachable"""
-    cmd = ['ping', '-c', '1', '-W', '2', workstation]
-    result = dorunrun(cmd, timeout=5)
-    return result.get('code', -1) == 0
-
-
-@trap
-def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
+def is_host_online(hostname: str) -> bool:
     """
-    Get mount status from workstation using SSH 'mount -av' command.
-    
-    The 'mount -av' command verifies all mounts in /etc/fstab and reports:
-    - Mounts that are already mounted (healthy)
-    - Mounts that can be mounted (were unmounted but work)
-    - Mounts that fail to mount (need attention)
+    Check if a host is reachable via ping.
     
     Args:
-        workstation: Hostname of the workstation to check
-    
+        hostname: Target hostname to check
+        
     Returns:
-        Tuple of (success, mount_list, error_message):
-        - success (bool): True if command executed successfully
-        - mount_list (List[Dict]): List of mount information dicts, each containing:
-            * device: Source device/NFS path (e.g., '141.166.186.35:/mnt/usrlocal/8')
-            * mount_point: Target mount point (e.g., '/usr/local/chem.sw')
-            * status: 'mounted' or 'newly_mounted'
-        - error_message (str): Error details if command failed, empty string on success
-    
-    Example mount output parsing:
-        "141.166.186.35:/mnt/usrlocal/8 on /usr/local/chem.sw already mounted"
-        → {'device': '141.166.186.35:/mnt/usrlocal/8', 
-           'mount_point': '/usr/local/chem.sw',
-           'status': 'mounted'}
+        bool: True if host responds to ping, False otherwise
     """
     global myconfig
     
-    cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'mount -av']
-    result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
-    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
+    # Use ping with timeout
+    result = dorunrun(['ping', '-c', '2', '-W', '2', hostname], timeout=5)
+    return result.code == 0
+
+@trap
+def get_mount_status(workstation: str) -> Tuple[str, List[Dict], str]:
+    """
+    Get mount status from workstation using SSH 'mount -av' command.
     
-    # Debug logging
-    logger.debug(f"{workstation}: mount -av exit code: {exit_code}")
+    Enhanced to distinguish between connection failures and mount issues.
+    
+    Returns:
+        Tuple of (status_type, mount_list, error_message):
+        - status_type: 'success', 'connection_failed', or 'command_failed'
+        - mount_list: List of mount information dicts
+        - error_message: Error details if command failed
+    """
+    global myconfig
+
+    cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'mount -av']
+    
+    try:
+        result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
+    except TimeoutError:
+        logger.error(f"{workstation}: SSH connection timeout")
+        return 'connection_failed', [], "SSH connection timeout"
+    except Exception as e:
+        logger.error(f"{workstation}: SSH connection failed: {str(e)}")
+        return 'connection_failed', [], f"SSH connection error: {str(e)}"
+    
+    # Check SSH-specific error codes
+    if result.code == 255:
+        return 'connection_failed', [], "SSH connection failed (code 255)"
+    elif result.code == 124:
+        return 'connection_failed', [], "SSH command timeout"
+    elif result.code == 1:
+        # SSH connected but mount command had issues
+        return 'command_failed', [], f"Mount command error: {result.stderr}"
+    elif result.code != 0:
+        return 'command_failed', [], f"Mount command failed with code {result.code}"
+    
+    # Parse successful output
+    stdout = result.stdout
+    stderr = result.stderr
+    
     if stderr:
         logger.info(f"{workstation}: mount -av stderr: {stderr}")
-    logger.debug(f"{workstation}: mount -av stdout lines: {len(stdout.splitlines())}")
     
-    # Parse mount output - get both regular output and errors
+    # Parse mount output
     mounts = []
-    
-    # First, check stderr for mount.nfs errors
-    if stderr:
-        logger.debug(f"{workstation}: Processing {len(stderr.splitlines())} stderr lines")
-    for line in stderr.splitlines():
-        logger.debug(f"{workstation}: stderr line: {line}")
-        if line.startswith('mount.nfs:'):
-            if 'does not exist' in line:
-                # Extract mount point from error message
-                # "mount.nfs: mount point /franksinatra/logP does not exist"
-                parts = line.split('mount point')
-                if len(parts) > 1:
-                    mount_point = parts[1].split('does not exist')[0].strip()
-                    mount_info = {
-                        'device': '',
-                        'mount_point': mount_point,
-                        'status': 'directory_missing'
-                    }
-                    mounts.append(mount_info)
-                    logger.warning(f"Mount point missing: {mount_point}")
-            elif 'Connection timed out' in line or 'Connection refused' in line or 'access denied' in line.lower():
-                # Log NFS connection errors but without specific mount point
-                # These will be caught by the regular parsing if mount point is in output
-                logger.error(f"NFS mount error: {line}")
-            else:
-                # Log other mount.nfs errors for debugging
-                logger.debug(f"mount.nfs message: {line}")
-    
-    # Parse regular stdout output
     for line in stdout.splitlines():
-        # Skip empty lines
         if not line.strip():
             continue
             
-        # Look for mount status lines: "mount_point : status"
-        # Examples:
-        #   "/usr/local/chem.sw       : already mounted"
-        #   "/boot                    : already mounted"
-        #   "none                     : ignored"
+        # Look for mount status lines
         if ' : ' in line:
             try:
-                # Split by ' : ' to get mount_point and status
-                parts = line.split(' : ', 1)
-                if len(parts) == 2:
-                    mount_point = parts[0].strip()
-                    status_text = parts[1].strip()
-                    
-                    # Skip ignored mounts and root filesystem
-                    if 'ignored' in status_text.lower() or mount_point == '/':
-                        continue
-                    
-                    # Device will be empty - we'd need to parse 'mount' output to get it
-                    # For now, this is sufficient for mount status tracking
-                    device = ''
-                    
-                    # Determine status from mount -av output
-                    if 'already mounted' in status_text.lower():
-                        status = 'mounted'
-                    elif 'successfully mounted' in status_text.lower() or 'mounted' in status_text.lower():
-                        status = 'newly_mounted'
-                    elif 'failed' in status_text.lower() or 'error' in status_text.lower():
-                        status = 'failed'
-                    elif 'not mounted' in status_text.lower():
-                        status = 'not_mounted'
-                    else:
-                        status = 'unknown'
-                    
-                    mount_info = {
-                        'device': device,
-                        'mount_point': mount_point,
-                        'status': status
-                    }
-                    mounts.append(mount_info)
-            except Exception:
-                # Skip lines we can't parse
+                mount_point, status_msg = line.split(' : ', 1)
+                mount_point = mount_point.strip()
+                status_msg = status_msg.strip()
+                
+                # Determine mount status
+                if 'already mounted' in status_msg.lower():
+                    status = 'mounted'
+                elif 'mounted' in status_msg.lower():
+                    status = 'newly_mounted'
+                elif 'ignored' in status_msg.lower():
+                    continue  # Skip ignored entries
+                else:
+                    status = 'unknown'
+                
+                # Extract device info if available
+                device = ''
+                if ' on ' in line:
+                    device = line.split(' on ')[0].strip()
+                
+                mounts.append({
+                    'device': device,
+                    'mount_point': mount_point,
+                    'status': status
+                })
+                
+            except ValueError as e:
+                logger.debug(f"Could not parse mount line: {line}")
                 continue
     
-    # Check if any mounts have failure status
-    has_failures = any(m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown'] 
-                       for m in mounts)
-    
-    # If we found mounts, return them along with success/failure indication
-    if mounts:
-        if has_failures:
-            logger.warning(f"Mount check completed with failures")
-        return True, mounts, ""  # Return True because we got data, failures are in the mount list
-    
-    # Only return failure if exit code is bad AND we found no mounts
-    if exit_code != 0:
-        return False, [], stderr
-    
-    return True, mounts, ""
-
-
-@trap
+    return 'success', mounts, ""
 
 @trap
 def check_mount_point_directories(workstation: str, expected_mounts: List[str]) -> Dict[str, str]:
     """
-    Check if mount point directories exist on workstation
+    Check if mount point directories exist on the workstation.
     
     Args:
-        workstation: Hostname
+        workstation: Target hostname
         expected_mounts: List of mount point paths that should exist
         
     Returns:
-        Dict mapping mount_point to status:
-            'exists' - directory exists
-            'missing' - directory does not exist
-            'error' - could not check
+        Dictionary mapping mount points to status ('exists', 'missing', 'error')
     """
-    global myconfig, logger
+    global myconfig
+    results = {}
     
     if not expected_mounts:
-        return {}
+        return results
     
-    # Build command to check all mount points in one SSH call
-    check_cmds = []
-    for mp in expected_mounts:
-        # Escape single quotes in mount point path
-        safe_mp = mp.replace("'", "'\\''")
-        check_cmds.append(f"test -d '{safe_mp}' && echo '{safe_mp}:EXISTS' || echo '{safe_mp}:MISSING'")
+    # Build command to check all mount points at once
+    checks = ' && '.join([f'test -d "{mp}" && echo "{mp}:exists" || echo "{mp}:missing"' 
+                          for mp in expected_mounts])
     
-    cmd_str = ' ; '.join(check_cmds)
-    cmd = ['ssh'] + myconfig.ssh_options + [workstation, cmd_str]
-    result = dorunrun(cmd, timeout=10)
+    cmd = ['ssh'] + myconfig.ssh_options + [workstation, f'bash -c \'{checks}\'']
     
-    status_map = {}
-    if result.get('code') == 0:
-        for line in result.get('stdout', '').splitlines():
-            if ':EXISTS' in line:
-                mp = line.replace(':EXISTS', '').strip()
-                status_map[mp] = 'exists'
-            elif ':MISSING' in line:
-                mp = line.replace(':MISSING', '').strip()
-                status_map[mp] = 'missing'
-                logger.warning(f"{workstation}: Mount point directory missing: {mp}")
-    else:
-        logger.error(f"{workstation}: Failed to check mount point directories")
+    try:
+        result = dorunrun(cmd, timeout=myconfig.ssh_timeout)
+        
+        if result.code == 0:
+            for line in result.stdout.splitlines():
+                if ':' in line:
+                    mp, status = line.rsplit(':', 1)
+                    results[mp] = status
+        else:
+            for mp in expected_mounts:
+                results[mp] = 'error'
+                
+    except Exception as e:
+        logger.error(f"Failed to check mount directories on {workstation}: {e}")
         for mp in expected_mounts:
-            status_map[mp] = 'error'
+            results[mp] = 'error'
     
-    return status_map
+    return results
 
-
-def verify_software_access(workstation: str, mount_point: str, 
-                           software_list: List[str]) -> Dict[str, bool]:
+@trap
+def verify_software_access(workstation: str, mount_point: str, software_list: List[str]) -> Dict[str, bool]:
     """
-    Verify that critical software packages are accessible on a mount point.
-    
-    This checks whether important computational chemistry software is available
-    and accessible. A missing or inaccessible package could indicate:
-    - Mount failure or unmount
-    - Permission issues
-    - NFS stale file handle
-    - Network connectivity problems
-    
-    The function uses SSH 'test -e' command to check file/directory existence.
-    Results are logged to the software_availability table for tracking.
+    Verify that critical software is accessible on a mount point.
     
     Args:
         workstation: Hostname to check
         mount_point: Base mount path (e.g., '/usr/local/chem.sw')
-        software_list: List of software names to verify (e.g., ['amber', 'Columbus', 'gaussian'])
-    
-    Returns:
-        Dictionary mapping software names to accessibility boolean:
-        Example: {'amber': True, 'Columbus': True, 'gaussian': False}
+        software_list: List of software names to verify
         
-    Side Effects:
-        - Inserts software check results into database via db.add_software_check()
-        - Each software is tested individually for granular tracking
-    
-    Note:
-        Software names are expected to be subdirectories or files directly under
-        the mount_point. Adjust paths in TOML config if software uses different structure.
+    Returns:
+        Dictionary mapping software names to accessibility boolean
     """
-    global myconfig, db
+    global myconfig
+    global db
     
     results = {}
     
+    if not software_list:
+        return results
+    
     for software in software_list:
-        test_path = f"{mount_point}/{software}"
-        cmd = ['ssh'] + myconfig.ssh_options + [workstation, 
-               f'test -e {test_path} && echo "OK" || echo "MISSING"']
+        software_path = f"{mount_point}/{software}"
+        cmd = ['ssh'] + myconfig.ssh_options + [
+            workstation, f'test -e "{software_path}" && echo "1" || echo "0"'
+        ]
         
-        result = dorunrun(cmd, timeout=10)
-        exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
-        results[software] = 'OK' in stdout
-        
-        # Log to database
-        db.add_software_check(workstation, software, mount_point, results[software])
+        try:
+            result = dorunrun(cmd, timeout=10)
+            accessible = result.stdout.strip() == '1'
+            results[software] = accessible
+            
+            # Log to database
+            db.record_software_check(workstation, software, software_path, accessible)
+            
+        except Exception as e:
+            logger.error(f"Failed to check {software} on {workstation}: {e}")
+            results[software] = False
+            db.record_software_check(workstation, software, software_path, False, str(e))
     
     return results
 
-
 @trap
-def attempt_remount(workstation: str, mount_point: str = None) -> Tuple[bool, str]:
-    """Attempt to remount NAS directories on workstation
+def attempt_remount(workstation: str, mount_point: str = None) -> bool:
+    """
+    Attempt to remount filesystem(s) on workstation.
     
     Args:
-        workstation: Hostname
-        mount_point: Specific mount point to remount, or None for all mounts
-    """
-    global myconfig, logger
-    
-    if mount_point:
-        # Try to remount specific mount point
-        cmd = ['ssh'] + myconfig.ssh_options + [workstation, f'sudo mount {mount_point}']
-        logger.info(f"Attempting to remount {mount_point} on {workstation}")
-    else:
-        # Remount all
-        cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'sudo mount -a']
-        logger.info(f"Attempting to remount all on {workstation}")
-    
-    result = dorunrun(cmd, timeout=60)
-    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
-    
-    if exit_code == 0:
-        logger.info(f"Successfully remounted on {workstation}")
-        return True, "Remount successful"
-    else:
-        logger.error(f"Failed to remount on {workstation}: {stderr}")
-        return False, stderr
-
-
-@trap
-@trap
-def get_active_users(workstation: str) -> tuple:
-    """Get active user count and list of usernames on workstation
-    
+        workstation: Target hostname
+        mount_point: Specific mount point or None for all
+        
     Returns:
-        tuple: (user_count, user_list_string)
-            user_count: Number of active users
-            user_list_string: Comma-separated list of up to 3 usernames, 
-                             or None if no users
+        bool: True if remount succeeded
     """
     global myconfig
     
-    cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'who']
-    result = dorunrun(cmd, timeout=10)
-    exit_code, stdout, stderr = result.get("code", -1), result.get("stdout", ""), result.get("stderr", "")
+    if mount_point:
+        logger.info(f"Attempting to remount {mount_point} on {workstation}")
+        cmd_str = f'sudo mount {mount_point}'
+    else:
+        logger.info(f"Attempting to remount all on {workstation}")
+        cmd_str = 'sudo mount -a'
     
-    if exit_code == 0:
-        users = set()
-        for line in stdout.splitlines():
-            parts = line.split()
-            if parts:
-                users.add(parts[0])
+    cmd = ['ssh'] + myconfig.ssh_options + [workstation, cmd_str]
+    
+    try:
+        result = dorunrun(cmd, timeout=60)
         
-        user_count = len(users)
-        if user_count == 0:
-            return 0, None
-        
-        # Sort and limit to first 3 users
-        sorted_users = sorted(users)
-        if user_count <= 3:
-            user_list = ','.join(sorted_users)
+        if result.code == 0:
+            logger.info(f"Successfully remounted on {workstation}")
+            return True
         else:
-            user_list = ','.join(sorted_users[:3]) + f',+{user_count-3}'
-        
-        return user_count, user_list
+            logger.error(f"Failed to remount on {workstation}: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Remount attempt failed on {workstation}: {e}")
+        return False
+
+@trap
+def count_active_users(workstation: str) -> Tuple[int, Optional[str]]:
+    """
+    Count number of active users on workstation.
+    
+    Returns:
+        Tuple of (user_count, comma_separated_user_list)
+    """
+    global myconfig
+    
+    cmd = ['ssh'] + myconfig.ssh_options + [workstation, 'who | cut -d" " -f1 | sort -u']
+    
+    try:
+        result = dorunrun(cmd, timeout=10)
+        if result.code == 0 and result.stdout.strip():
+            users = result.stdout.strip().split('\n')
+            user_count = len(users)
+            user_list = ','.join(users)
+            return user_count, user_list
+    except Exception as e:
+        logger.debug(f"Could not count users on {workstation}: {e}")
     
     return 0, None
 
 @trap
 def monitor_workstation(workstation_config: Dict) -> Dict:
     """
-    Monitor a single workstation's NAS mounts and verify software accessibility.
+    Monitor a single workstation's NAS mounts with improved error classification.
     
-    This function performs the core monitoring workflow:
-    1. Check if workstation is online (ping test)
-    2. Get mount status via SSH 'mount -av' command
-    3. Count active users if configured
-    4. Attempt remount if issues detected and auto-fix is enabled
-    5. Verify critical software is accessible on each mount
-    6. Record all results to database
+    Distinguishes between:
+    - Connectivity issues (can't reach the workstation)
+    - Mount failures (workstation reachable but mounts have problems)
+    - Successful checks
     
     Args:
         workstation_config: Dictionary with 'host' and 'mounts' keys
-                           Example: {'host': 'adam', 'mounts': ['/usr/local/chem.sw']}
-    
+        
     Returns:
-        Dictionary containing monitoring results:
-        - workstation: Host name
-        - timestamp: ISO format timestamp
-        - online: Boolean, is host reachable
-        - mounts_ok: Boolean, are mounts working
-        - active_users: Integer count of logged-in users
-        - mount_details: List of mount info dicts
-        - software_issues: List of inaccessible software
-        - actions_taken: List of remediation actions
+        Dictionary containing monitoring results with issue classification
     """
-    global myconfig, logger, db
+    global myconfig
+    global db
+    global logger
     
     workstation = workstation_config['host']
     expected_mounts = workstation_config['mounts']
     
-    logger.info(f"Checking workstation: {workstation}")
-    
     report = {
         'workstation': workstation,
         'timestamp': datetime.datetime.now().isoformat(),
-        'online': False,
-        'mounts_ok': False,
-        'active_users': 0,
-        'user_list': None,
-        'mount_details': [],
-        'software_issues': [],
-        'actions_taken': []
+        'online': None,
+        'connectivity': 'unknown',
+        'mounts': {},
+        'software': {},
+        'issues': [],
+        'users': 0
     }
     
-    # Check if workstation is online
-    if not check_workstation_online(workstation):
+    logger.info(f"Checking workstation: {workstation}")
+    mynetid = os.environ.get('USER', 'unknown')
+    
+    # First check if host is reachable
+    if not is_host_online(workstation):
+        report['online'] = False
+        report['connectivity'] = 'unreachable'
         logger.warning(f"{workstation} is offline")
+        
+        # Record connectivity issue
+        db.record_connectivity_issue(workstation, 'host_unreachable', 
+                                    'Ping failed - host is offline or unreachable')
         db.update_workstation_status(workstation, is_online=False, active_users=0,
-                                             user_list=None, checked_by=mynetid)
+                                    user_list=None, checked_by=mynetid)
+        
+        report['issues'].append({
+            'type': 'connectivity',
+            'severity': 'critical',
+            'message': 'Workstation is offline or unreachable',
+            'requires_action': False
+        })
         return report
     
     report['online'] = True
     
     # Count active users if configured
     if myconfig.track_users:
-        report['active_users'], report['user_list'] = get_active_users(workstation)
-    else:
-        report['user_list'] = None
+        user_count, user_list = count_active_users(workstation)
+        report['users'] = user_count
+        if user_count > 0:
+            logger.info(f"{workstation} has {user_count} active users: {user_list}")
     
     # Get mount status
-    success, mounts, error_msg = get_mount_status(workstation)
+    status_type, mount_list, error_msg = get_mount_status(workstation)
     
-    if not success:
-        logger.error(f"Failed to get mount status from {workstation}: {error_msg}")
-        report['error'] = error_msg
+    if status_type == 'connection_failed':
+        # SSH/network issue - not a mount problem
+        report['connectivity'] = 'ssh_failed'
         
-        if myconfig.attempt_fix:
-            logger.info(f"Attempting to fix mounts on {workstation}")
-            fix_success, fix_msg = attempt_remount(workstation)
-            report['actions_taken'].append(f"Remount attempt: {fix_msg}")
-            
-            if fix_success:
-                # Re-check after fix
-                success, mounts, error_msg = get_mount_status(workstation)
-                report['mounts_ok'] = success
-                report['mount_details'] = mounts
+        # Record this as a connectivity issue, not a mount failure
+        db.record_connectivity_issue(workstation, 'ssh_failed', error_msg)
+        
+        report['issues'].append({
+            'type': 'connectivity',
+            'severity': 'warning',
+            'message': f"Cannot verify mounts - SSH failed: {error_msg}",
+            'requires_action': False
+        })
+        
+        logger.warning(f"{workstation}: Connectivity issue (SSH failed) - {error_msg}")
+        
+        # Don't report mount failures if we can't connect
+        # But update status to indicate uncertainty
+        db.update_workstation_status(workstation, is_online=True, 
+                                    connectivity='ssh_failed',
+                                    active_users=report['users'],
+                                    checked_by=mynetid)
+        return report
+    
+    elif status_type == 'command_failed':
+        # Connected but mount command had issues
+        report['connectivity'] = 'connected'
+        report['issues'].append({
+            'type': 'command_error',
+            'severity': 'warning',
+            'message': f"Mount command error: {error_msg}",
+            'requires_action': True
+        })
+        logger.warning(f"{workstation}: Mount command failed but connected")
+    
     else:
-        report['mount_details'] = mounts
-        # Check if any mounts have failure status
-        failed_mounts = [m for m in mounts if m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown']]
-        has_failures = len(failed_mounts) > 0
-        report['mounts_ok'] = not has_failures
+        # Successfully got mount status
+        report['connectivity'] = 'connected'
         
-        # Attempt to fix failed mounts
-        if has_failures and myconfig.attempt_fix:
-            for failed_mount in failed_mounts:
-                mount_point = failed_mount['mount_point']
-                logger.info(f"Attempting to fix failed mount on {workstation}: {mount_point}")
-                fix_success, fix_msg = attempt_remount(workstation, mount_point)
-                report['actions_taken'].append(f"Remount {mount_point}: {fix_msg}")
+        # Clear any previous connectivity issues
+        db.resolve_connectivity_issues(workstation)
+        
+        # Check each expected mount
+        mounted_points = {m['mount_point']: m for m in mount_list}
+        
+        for mount_point in expected_mounts:
+            if mount_point in mounted_points:
+                # Mount is healthy
+                report['mounts'][mount_point] = 'mounted'
+                db.record_mount_status(workstation, mount_point, 
+                                     mounted_points[mount_point].get('device', ''),
+                                     'nfs', 'mounted')
+            else:
+                # This is an actual mount failure
+                report['mounts'][mount_point] = 'not_mounted'
+                report['issues'].append({
+                    'type': 'mount_failure',
+                    'severity': 'critical',
+                    'mount_point': mount_point,
+                    'message': f"{mount_point} is not mounted",
+                    'requires_action': True
+                })
                 
-                if fix_success:
-                    # Re-check this specific mount
-                    success_recheck, mounts_recheck, _ = get_mount_status(workstation)
-                    if success_recheck:
-                        # Update the mount in our list
-                        for i, m in enumerate(report['mount_details']):
-                            if m['mount_point'] == mount_point:
-                                recheck_mount = next((rm for rm in mounts_recheck if rm['mount_point'] == mount_point), None)
-                                if recheck_mount:
-                                    report['mount_details'][i] = recheck_mount
-                        # Re-evaluate if we still have failures
-                        failed_mounts = [m for m in report['mount_details'] if m.get('status') in ['failed', 'directory_missing', 'not_mounted', 'unknown']]
-                        report['mounts_ok'] = len(failed_mounts) == 0
+                db.record_mount_status(workstation, mount_point, '', 'nfs', 
+                                     'not_mounted', error_message='Mount point not found')
+                
+                # Attempt to fix if configured and no users active
+                if myconfig.attempt_fix and report['users'] == 0:
+                    logger.info(f"Attempting to fix mounts on {workstation}")
+                    if attempt_remount(workstation):
+                        # Re-check mount status
+                        _, new_mounts, _ = get_mount_status(workstation)
+                        new_mounted = {m['mount_point']: m for m in new_mounts}
+                        
+                        if mount_point in new_mounted:
+                            report['mounts'][mount_point] = 'remounted'
+                            db.record_mount_status(workstation, mount_point,
+                                                 new_mounted[mount_point].get('device', ''),
+                                                 'nfs', 'newly_mounted',
+                                                 action_taken='Auto-remounted successfully')
+                            logger.info(f"Successfully remounted {mount_point} on {workstation}")
+                        else:
+                            logger.error(f"Remount of {mount_point} on {workstation} failed")
+                elif report['users'] > 0:
+                    logger.info(f"Skipping auto-fix on {workstation} - users active")
     
-    # Log mounts to database
-    action_str = ', '.join(report['actions_taken']) if report['actions_taken'] else None
-    
-    for mount in mounts:
-        db.add_mount_status(
-            workstation, mount['mount_point'], mount['device'], 
-            mount['status'], report['active_users'], action_str,
-            mynetid, os.getenv('SLURM_JOB_ID')
-        )
-    
-    # Check critical software if mounts are OK and workstation is still online
-    if report['mounts_ok']:
-        # Verify workstation is still online before checking software (can take time)
-        if not check_workstation_online(workstation):
-            logger.warning(f"{workstation} went offline during monitoring")
-            report['online'] = False
-            db.update_workstation_status(workstation, is_online=False, active_users=0,
-                                        user_list=None, checked_by=mynetid)
-            return report
+    # Check critical software if mounts are OK
+    for sw_config in myconfig.critical_software:
+        mount_point = sw_config['mount']
+        software_list = sw_config['software']
         
-        for sw_config in myconfig.critical_software:
-            mount_point = sw_config['mount']
-            software_list = sw_config['software']
+        # Only check if this mount is expected and mounted
+        if mount_point in expected_mounts and report['mounts'].get(mount_point) in ['mounted', 'remounted']:
+            software_status = verify_software_access(workstation, mount_point, software_list)
             
-            # Only check if this mount is expected on this workstation
-            if mount_point in expected_mounts:
-                software_status = verify_software_access(
-                    workstation, mount_point, software_list
-                )
-                
-                for software, accessible in software_status.items():
-                    if not accessible:
-                        issue = {'software': software, 'mount': mount_point}
-                        report['software_issues'].append(issue)
-                        logger.warning(
-                            f"Software not accessible on {workstation}: {software} at {mount_point}"
-                        )
+            for software, accessible in software_status.items():
+                report['software'][software] = accessible
+                if not accessible:
+                    report['issues'].append({
+                        'type': 'software_missing',
+                        'severity': 'warning',
+                        'software': software,
+                        'mount_point': mount_point,
+                        'message': f"Software {software} not accessible on {mount_point}",
+                        'requires_action': False
+                    })
     
-    db.update_workstation_status(workstation, is_online=True,
-                                         success=report['mounts_ok'],
-                                         active_users=report['active_users'],
-                                         user_list=report['user_list'],
-                                         checked_by=mynetid)
+    # Update database with final status
+    db.update_workstation_status(
+        workstation,
+        is_online=True,
+        connectivity=report['connectivity'],
+        active_users=report['users'],
+        mount_status='healthy' if not report['issues'] else 'issues',
+        checked_by=mynetid
+    )
     
     return report
 
-
 @trap
-def monitor_all_workstations() -> List[Dict]:
-    """Monitor all configured workstations"""
-    global myconfig, logger
+def monitor_all_workstations(workstation_configs: List[Dict]) -> List[Dict]:
+    """
+    Monitor all configured workstations.
     
-    logger.info(f"Starting monitoring of {len(myconfig.workstations)} workstations")
+    Args:
+        workstation_configs: List of workstation configurations
+        
+    Returns:
+        List of monitoring reports
+    """
+    global db
+    global logger
     
     results = []
-    for ws_config in myconfig.workstations:
+    
+    for ws_config in workstation_configs:
         result = monitor_workstation(ws_config)
         results.append(result)
     
-    # Cleanup old records using database triggers
+    # Cleanup old records
     mount_deleted, software_deleted, failures_deleted = db.cleanup_old_records()
-    logger.info(f"Database cleanup: {mount_deleted} mount, {software_deleted} software, {failures_deleted} failure records removed")
+    logger.info(f"Database cleanup: {mount_deleted} mount, {software_deleted} software, "
+               f"{failures_deleted} failure records removed")
     
     return results
 
-
 @trap
-def generate_report(results: List[Dict]) -> str:
-    """Generate human-readable report"""
-    control_host = socket.gethostname()
+def generate_summary_report(results: List[Dict]) -> str:
+    """
+    Generate a human-readable summary report with improved issue classification.
     
-    report_lines = [
-        "=" * 70,
-        "NAS Workstation Mount Status Report",
-        f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"Control Host: {control_host}",
-        f"User: {mynetid}",
-        "=" * 70,
-        ""
-    ]
-    
+    Separates:
+    - Critical issues (actual mount failures)
+    - Warnings (connectivity issues, software issues)
+    - Informational items
+    """
     total = len(results)
     online = sum(1 for r in results if r['online'])
-    issues = sum(1 for r in results if not r['mounts_ok'] or r['software_issues'])
+    offline = sum(1 for r in results if not r['online'])
     
-    report_lines.extend([
+    # Classify issues
+    mount_failures = []
+    connectivity_issues = []
+    other_issues = []
+    
+    for result in results:
+        workstation = result['workstation']
+        for issue in result.get('issues', []):
+            issue['workstation'] = workstation
+            
+            if issue['type'] == 'mount_failure':
+                mount_failures.append(issue)
+            elif issue['type'] == 'connectivity':
+                connectivity_issues.append(issue)
+            else:
+                other_issues.append(issue)
+    
+    # Build report
+    lines = [
+        "=" * 70,
+        "NAS Workstation Mount Status Report",
+        f"Generated: {datetime.datetime.now()}",
+        f"Control Host: {socket.gethostname()}",
+        f"User: {os.environ.get('USER', 'unknown')}",
+        "=" * 70,
+        "",
         "SUMMARY:",
         f"  Total Workstations: {total}",
         f"  Online: {online}",
-        f"  Offline: {total - online}",
-        f"  With Issues: {issues}",
+        f"  Offline: {offline}",
+        f"  Mount Failures: {len(mount_failures)}",
+        f"  Connectivity Issues: {len(connectivity_issues)}",
         ""
-    ])
+    ]
     
-    if issues > 0:
-        report_lines.append("WORKSTATIONS WITH ISSUES:")
-        report_lines.append("-" * 70)
-        
-        for result in results:
-            if not result['mounts_ok'] or result['software_issues']:
-                report_lines.append(f"\n{result['workstation']}:")
-                report_lines.append(f"  Online: {result['online']}")
-                report_lines.append(f"  Mounts OK: {result['mounts_ok']}")
-                
-                if result.get('error'):
-                    report_lines.append(f"  Error: {result['error']}")
-                
-                if result['software_issues']:
-                    report_lines.append("  Software Issues:")
-                    for issue in result['software_issues']:
-                        report_lines.append(
-                            f"    - {issue['software']} not accessible at {issue['mount']}"
-                        )
-                
-                if result['actions_taken']:
-                    report_lines.append("  Actions Taken:")
-                    for action in result['actions_taken']:
-                        report_lines.append(f"    - {action}")
-    else:
-        report_lines.append("All workstations have healthy NAS mounts")
+    if mount_failures:
+        lines.append("CRITICAL - MOUNT FAILURES:")
+        lines.append("-" * 70)
+        for issue in mount_failures:
+            lines.append(f"{issue['workstation']}: {issue['mount_point']} - NOT MOUNTED")
+        lines.append("")
     
-    report_lines.append("\n" + "=" * 70)
+    if connectivity_issues:
+        lines.append("WARNING - CONNECTIVITY ISSUES:")
+        lines.append("-" * 70)
+        for issue in connectivity_issues:
+            lines.append(f"{issue['workstation']}: {issue['message']}")
+        lines.append("Note: Mount status cannot be verified for these workstations")
+        lines.append("")
     
-    return "\n".join(report_lines)
-
+    if other_issues:
+        lines.append("OTHER ISSUES:")
+        lines.append("-" * 70)
+        for issue in other_issues:
+            lines.append(f"{issue['workstation']}: {issue['message']}")
+        lines.append("")
+    
+    if not mount_failures and not connectivity_issues and not other_issues:
+        lines.append("All workstations have healthy NAS mounts")
+    
+    lines.append("=" * 70)
+    
+    return "\n".join(lines)
 
 @trap
-def send_email_notification(subject: str, body: str) -> None:
-    """Send email notification using system mail command"""
-    global myconfig, logger
+def should_suppress_notification() -> bool:
+    """
+    Check if we're in off-hours or weekend suppression period.
+    """
+    global myconfig
+    
+    if not hasattr(myconfig, 'off_hours_start') or not hasattr(myconfig, 'off_hours_end'):
+        return False
+    
+    now = datetime.datetime.now()
+    current_hour = now.hour
+    weekday = now.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
+    
+    # Check weekend suppression
+    if hasattr(myconfig, 'suppress_weekends') and myconfig.suppress_weekends:
+        # Friday after 6 PM
+        if weekday == 4 and current_hour >= 18:
+            return True
+        # All day Saturday and Sunday
+        if weekday in [5, 6]:
+            return True
+        # Monday before 6 AM
+        if weekday == 0 and current_hour < 6:
+            return True
+    
+    # Check daily off-hours
+    start = myconfig.off_hours_start
+    end = myconfig.off_hours_end
+    
+    # Handle overnight periods (e.g., 18:00 to 06:00)
+    if start > end:
+        return current_hour >= start or current_hour < end
+    else:
+        return start <= current_hour < end
+
+def send_notification(subject: str, message: str):
+    """
+    Send email notification.
+    """
+    global myconfig
+    global logger
+    
+    if not myconfig.send_notifications:
+        return
+    
+    if should_suppress_notification():
+        logger.info("Notification suppressed due to off-hours/weekend setting")
+        # Store for later off-hours summary
+        db.store_off_hours_issue(message)
+        return
     
     try:
-        import subprocess
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
         
-        # Use system mail command (works with sendmail/postfix)
-        # Create mail command with each recipient as separate argument
-        cmd = ['mail', '-s', subject]
-        if hasattr(myconfig, 'notification_source') and myconfig.notification_source:
-            cmd.extend(['-r', myconfig.notification_source])
-        # Add all recipients as separate arguments
-        cmd.extend(myconfig.notification_addresses)
+        msg = MIMEMultipart()
+        msg['From'] = myconfig.notification_source
+        msg['To'] = ', '.join(myconfig.notification_addresses)
+        msg['Subject'] = subject
+        msg.attach(MIMEText(message, 'plain'))
         
-        # Send email using subprocess with stdin
-        result = subprocess.run(
-            cmd,
-            input=body.encode('utf-8'),
-            capture_output=True,
-            timeout=30
-        )
+        with smtplib.SMTP(myconfig.smtp_server, myconfig.smtp_port) as server:
+            server.send_message(msg)
         
-        if result.returncode == 0:
-            recipients_str = ', '.join(myconfig.notification_addresses)
-            logger.info(f"Email notification sent: {subject} to {recipients_str}")
-        else:
-            stderr = result.stderr.decode('utf-8', errors='ignore')
-            logger.error(f"Failed to send email: {stderr}")
-            
+        logger.info(f"Notification sent: {subject}")
+        
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"Failed to send notification: {e}")
 
-
-@trap
-
-def send_off_hours_summary() -> None:
-    """Send consolidated email of all issues detected during off-hours"""
-    global myconfig, logger, db
+def send_off_hours_summary():
+    """
+    Send summary of issues detected during off-hours.
+    """
+    global db
+    global myconfig
+    global logger
     
-    issues = db.get_off_hours_issues(unnotified_only=True)
+    issues = db.get_off_hours_issues()
     
     if not issues:
         logger.info("No off-hours issues to report")
@@ -732,7 +672,7 @@ def send_off_hours_summary() -> None:
     report_lines = [
         "=" * 70,
         "NAS Workstation Monitor - Off-Hours Summary",
-        f"Issues Detected: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Issues Detected: {datetime.datetime.now()}",
         f"Control Host: {socket.gethostname()}",
         "=" * 70,
         "",
@@ -744,201 +684,125 @@ def send_off_hours_summary() -> None:
         report_lines.append("-" * 70)
         report_lines.append(f"{workstation}:")
         
-        # Group by issue type
-        issues_by_type = {}
-        for issue in by_workstation[workstation]:
-            issue_type = issue['type']
-            if issue_type not in issues_by_type:
-                issues_by_type[issue_type] = []
-            issues_by_type[issue_type].append(issue)
+        # Separate by issue type
+        mount_issues = [i for i in by_workstation[workstation] if 'mount' in i['type'].lower()]
+        conn_issues = [i for i in by_workstation[workstation] if 'connect' in i['type'].lower() or 'ssh' in i['type'].lower()]
         
-        for issue_type, type_issues in issues_by_type.items():
-            report_lines.append(f"  {issue_type.replace('_', ' ').title()}:")
-            # Show most recent occurrence
-            most_recent = max(type_issues, key=lambda x: x['time'])
-            # Convert UTC to local time for display
-            first_time = datetime.datetime.fromisoformat(type_issues[-1]['time'])
-            first_local = first_time.replace(tzinfo=datetime.timezone.utc).astimezone()
-            report_lines.append(f"    First: {first_local.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            last_time = datetime.datetime.fromisoformat(most_recent['time'])
-            last_local = last_time.replace(tzinfo=datetime.timezone.utc).astimezone()
-            report_lines.append(f"    Last: {last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            report_lines.append(f"    Count: {len(type_issues)}")
-            if most_recent['details']:
-                report_lines.append(f"    Details: {most_recent['details']}")
-        report_lines.append("")
+        if mount_issues:
+            report_lines.append("  Mount Failures:")
+            for issue in mount_issues:
+                report_lines.append(f"    {issue['details']} (at {issue['time']})")
+        
+        if conn_issues:
+            report_lines.append("  Connectivity Issues:")
+            for issue in conn_issues:
+                report_lines.append(f"    {issue['details']} (at {issue['time']})")
     
+    report_lines.append("")
     report_lines.append("=" * 70)
     
     report = "\n".join(report_lines)
     
-    # Send email
-    subject = f"NAS Monitor Off-Hours Summary: {len(by_workstation)} Workstation(s) with Issues"
-    send_email_notification(subject, report)
+    # Send the summary
+    send_notification(
+        f"NAS Monitor Off-Hours Summary: {len(by_workstation)} Workstation(s) with Issues",
+        report
+    )
     
-    # Mark as notified
-    count = db.mark_off_hours_issues_notified()
-    logger.info(f"Off-hours summary sent for {count} issues across {len(by_workstation)} workstations")
-    
-    print(report)
+    # Clear the off-hours issues after sending
+    db.clear_off_hours_issues()
 
-
-def nas_monitor_main(myargs: argparse.Namespace = None) -> int:
-    """
-    Main monitoring loop - continuous daemon that monitors all workstations.
+def main():
+    """Main entry point."""
+    global myconfig
+    global logger
+    global db
     
-    This is the primary entry point when running as a daemon. It:
-    1. Loads TOML configuration file
-    2. Initializes logger (URLogger with rotation)
-    3. Initializes database (creates schema if needed)
-    4. Sets up signal handling (ignores most signals for stability)
-    5. Enters infinite monitoring loop with configurable interval
-    6. Generates reports and sends notifications on issues
+    parser = argparse.ArgumentParser(
+        prog='nas_monitor',
+        description='NAS Workstation Mount Monitor'
+    )
     
-    The daemon will continue running until:
-    - Killed by system administrator
-    - System shutdown/reboot
-    - Unhandled exception (logged via @trap decorator)
+    parser.add_argument('-c', '--config', type=str,
+                       default='/home/zeus/nas-workstation-monitor/nas_monitor.toml',
+                       help='Configuration file path')
+    parser.add_argument('--once', action='store_true',
+                       help='Run once and exit')
+    parser.add_argument('--send-off-hours-summary', action='store_true',
+                       help='Send off-hours summary and exit')
+    parser.add_argument('--nice', type=int, default=0, choices=range(20),
+                       help='Nice level (0-19)')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                       help='Verbose output')
     
-    Args:
-        myargs: Parsed command line arguments from argparse
-                Expected attributes:
-                - config: Path to TOML configuration file
+    args = parser.parse_args()
     
-    Returns:
-        os.EX_OK (0) on successful completion
-        
-    Exit Codes:
-        os.EX_OK (0): Normal exit
-        os.EX_NOINPUT (66): Config file not found
-        os.EX_SOFTWARE (70): Python version too old
-    
-    Configuration:
-        See nas_monitor.toml for all configuration options including:
-        - time_interval: Seconds between monitoring cycles (default: 3600)
-        - attempt_fix: Auto-remount on failure (default: true)
-        - send_notifications: Email alerts (default: true)
-    
-    Signal Handling:
-        Most signals are ignored for daemon stability. To stop:
-        - Use 'kill -9 <pid>' (SIGKILL)
-        - Or remove from cron and wait for completion
-    """
-    global myconfig, logger, db
+    # Set nice level
+    if args.nice > 0:
+        os.nice(args.nice)
     
     # Load configuration
-    config_file = myargs.config if myargs else '/home/zeus/nas-monitor/nas_monitor.toml'
-    myconfig = load_config(config_file)
+    with open(args.config, 'r') as f:
+        config_dict = toml.load(f)
+    
+    # Convert to object notation
+    class Config:
+        def __init__(self, d):
+            for key, value in d.items():
+                if isinstance(value, dict):
+                    setattr(self, key, Config(value))
+                else:
+                    setattr(self, key, value)
+    
+    myconfig = Config(config_dict)
     
     # Initialize logger
-    logger = URLogger(logfile=myconfig.log_file, level=logging.INFO)
-    logger.info(f"NAS Monitor started by {mynetid}")
+    logger = URLogger(logfile=myconfig.log_file, level='DEBUG' if args.verbose else 'INFO')
     
     # Initialize database
     db = NASMonitorDB(myconfig.database, myconfig.schema_file)
-    logger.info(f"Database initialized: {myconfig.database}")
     
-    # Set up signal handling
-    for sig in range(0, signal.SIGRTMAX):
-        try:
-            signal.signal(sig, signal.SIG_IGN)
-        except:
-            pass
+    # Handle off-hours summary
+    if args.send_off_hours_summary:
+        send_off_hours_summary()
+        return 0
     
-    # Main monitoring loop
-    while True:
-        try:
-            results = monitor_all_workstations()
-            
-            # Generate report
-            report = generate_report(results)
-            print(report)
-            
-            # Send notifications if configured and issues found
-            if myconfig.send_notifications:
-                issues = sum(1 for r in results if not r['online'] or not r['mounts_ok'] or r['software_issues'])
-                if issues > 0:
-                    subject = f"NAS Monitor Alert: {issues} Workstation(s) with Issues"
-                    send_email_notification(subject, report)
-            
-        except Exception as e:
-            logger.error(f"Error in monitoring cycle: {e}")
-        
-        # Sleep until next interval
-        time.sleep(myconfig.time_interval)
-    
-    return os.EX_OK
-
-
-if __name__ == '__main__':
-    
-    parser = argparse.ArgumentParser(prog="nas_monitor", 
-        description="Monitor NAS mounts on chemistry workstations")
-
-    parser.add_argument('-c', '--config', type=str, 
-        default='/home/zeus/nas-workstation-monitor/nas_monitor.toml',
-        help="Configuration file path")
-    parser.add_argument('--once', action='store_true',
-        help="Run once and exit (don't loop)")
-    parser.add_argument('--send-off-hours-summary', action='store_true',
-        help='Send summary of off-hours issues and exit')
-    parser.add_argument('--nice', type=int, choices=range(0, 20), default=0,
-        help="Niceness may affect execution time")
-    parser.add_argument('-v', '--verbose', action='store_true',
-        help="Be chatty about what is taking place")
-
-    myargs = parser.parse_args()
-    myargs.verbose and linuxutils.dump_cmdline(myargs)
-    if myargs.nice: 
-        os.nice(myargs.nice)
-
+    # Run monitoring
     try:
-        if myargs.send_off_hours_summary:
-            # Send off-hours summary and exit
-            myconfig = load_config(myargs.config)
-            logger = URLogger(logfile=myconfig.log_file, level=logging.INFO)
-            db = NASMonitorDB(myconfig.database, myconfig.schema_file)
-            send_off_hours_summary()
-            sys.exit(os.EX_OK)
-        elif myargs.once:
-            # Run once and exit
-            myconfig = load_config(myargs.config)
-            logger = URLogger(logfile=myconfig.log_file, level=logging.INFO)
-            db = NASMonitorDB(myconfig.database, myconfig.schema_file)
-            results = monitor_all_workstations()
-            report = generate_report(results)
-            print(report)
+        while True:
+            results = monitor_all_workstations(myconfig.workstations)
             
-            # Send notifications if configured and issues found
-            if myconfig.send_notifications:
-                issues = sum(1 for r in results if not r['online'] or not r['mounts_ok'] or r['software_issues'])
-                if issues > 0:
-                    # Check if we're in off-hours
-                    if is_off_hours():
-                        # Log issues for morning summary instead of sending email
-                        logger.info(f"Off-hours: Logging {issues} workstation issues for morning summary")
-                        for r in results:
-                            if not r['online']:
-                                db.log_off_hours_issue(r['workstation'], 'offline', 'Workstation is offline')
-                            elif not r['mounts_ok']:
-                                mount_details = ', '.join([f"{m['mount_point']}: {m['status']}" 
-                                                          for m in r.get('mount_details', []) 
-                                                          if m.get('status') not in ['mounted', 'newly_mounted']])
-                                db.log_off_hours_issue(r['workstation'], 'mount_failure', mount_details)
-                            if r['software_issues']:
-                                software_details = ', '.join([f"{s['software']} at {s['mount']}" 
-                                                             for s in r['software_issues']])
-                                db.log_off_hours_issue(r['workstation'], 'software_issue', software_details)
-                    else:
-                        # Business hours - send email immediately
-                        subject = f"NAS Monitor Alert: {issues} Workstation(s) with Issues"
-                        send_email_notification(subject, report)
-                        logger.info(f"Email notification sent for {issues} workstation(s) with issues")
+            # Generate and print summary
+            summary = generate_summary_report(results)
+            print(summary)
             
-            sys.exit(os.EX_OK)
-        else:
-            # Run in daemon mode
-            sys.exit(nas_monitor_main(myargs))
-
+            # Log to file
+            logger.info(summary)
+            
+            # Send notifications for critical issues
+            critical_issues = [r for r in results if any(
+                i['severity'] == 'critical' and i['type'] == 'mount_failure' 
+                for i in r.get('issues', [])
+            )]
+            
+            if critical_issues:
+                send_notification(
+                    f"NAS Mount Alert: {len(critical_issues)} workstation(s) with mount failures",
+                    summary
+                )
+            
+            if args.once:
+                break
+            
+            # Wait for next cycle
+            time.sleep(myconfig.time_interval)
+            
+    except KeyboardInterrupt:
+        logger.info("Monitor stopped by user")
+        return 0
     except Exception as e:
-        print(f"Escaped or re-raised exception: {e}")
+        logger.error(f"Monitor failed: {e}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
