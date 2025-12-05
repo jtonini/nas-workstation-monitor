@@ -238,7 +238,7 @@ class NASMonitorDB:
             conn.commit()
     
     def record_software_check(self, workstation: str, software_name: str,
-                            software_path: str, is_accessible: bool,
+                            mount_point: str, is_accessible: bool,
                             error_message: str = None):
         """
         Record software accessibility check.
@@ -246,7 +246,7 @@ class NASMonitorDB:
         Args:
             workstation: Hostname
             software_name: Name of software
-            software_path: Full path to software
+            mount_point: Full path to software
             is_accessible: Whether software is accessible
             error_message: Optional error message
         """
@@ -258,10 +258,10 @@ class NASMonitorDB:
             
             cursor.execute('''
                 INSERT INTO software_availability
-                (workstation, software_name, software_path, is_accessible,
+                (workstation, software_name, mount_point, is_accessible,
                  check_time_ms, error_message)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (workstation, software_name, software_path, is_accessible,
+            ''', (workstation, software_name, mount_point, is_accessible,
                   0, error_message))
             
             conn.commit()

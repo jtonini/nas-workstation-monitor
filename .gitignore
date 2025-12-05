@@ -50,3 +50,5 @@ output/
 reports/
 *.csv
 *.json
+2025-*/
+test*.log
