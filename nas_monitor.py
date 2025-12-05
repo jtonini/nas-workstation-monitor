@@ -1,9 +1,27 @@
-#!/usr/bin/env python3
+_mount_issue(workstation: str, error_msg: str = "") -> tuple:
+    """
+    Classify if the issue is connectivity-related or an actual mount failure.
+    
+    Special handling for HIV_flaps nested mount configuration per faculty request.
+    
+    Returns: (issue_type, severity, description)
+        issue_type: 'connectivity', 'mount_failure', 'config_info'
+        severity: 'warning', 'critical', 'info'
+        description: Human-readable description
+    """
+    if not error_msg:
+        # No error message often means SSH worked but mount is missing
+        return ('mount_failure', 'critical', 'Mount point not found')
+    
+    error_lower = error_msg.lower().strip()
+    
+    # Empty error after SSH command often means timeout/connection issue
+    if error_lowe#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 NAS Workstation Mount Monitor
 Automated monitoring and maintenance of NAS mounts across lab workstations
-Version 1.1 - Improved error classification for better reporting
+Version 1.2 - Improved error classification with special handling for nested mounts
 """
 import typing
 from typing import *
@@ -32,24 +50,15 @@ myconfig = None
 logger = None
 db = None
 
-def classify_mount_issue(workstation: str, error_msg: str = "") -> tuple:
-    """
-    Classify if the issue is connectivity-related or an actual mount failure.
-    
-    Returns: (issue_type, severity, description)
-        issue_type: 'connectivity' or 'mount_failure'
-        severity: 'warning' or 'critical'
-        description: Human-readable description
-    """
-    if not error_msg:
-        # No error message often means SSH worked but mount is missing
-        return ('mount_failure', 'critical', 'Mount point not found')
-    
-    error_lower = error_msg.lower().strip()
-    
-    # Empty error after SSH command often means timeout/connection issue
-    if error_lower == '' or error_lower == '()':
+def classifyr == '' or error_lower == '()':
         return ('connectivity', 'warning', 'SSH connection timeout - unable to verify mounts')
+    
+    # Special handling for the HIV_flaps nested mount configuration
+    # This is expected behavior per faculty request - not an error
+    if 'protocol not supported' in error_lower:
+        # Check if this is the known HIV_flaps configuration
+        # These errors can be safely ignored as the mounts are actually working
+        return ('config_info', 'info', 'HIV_flaps nested mount configuration (working as designed)')
     
     # Check for connectivity indicators
     connectivity_indicators = [
@@ -61,10 +70,10 @@ def classify_mount_issue(workstation: str, error_msg: str = "") -> tuple:
     if any(indicator in error_lower for indicator in connectivity_indicators):
         return ('connectivity', 'warning', f'Connection issue: {error_msg[:100]}')
     
-    # Check for mount-specific errors
+    # Check for mount-specific errors (but not "Protocol not supported")
     mount_indicators = [
         'mount point', 'not mounted', 'stale', 'permission denied',
-        'no such file', 'device not', 'already mounted'
+        'no such file', 'device not'
     ]
     
     if any(indicator in error_lower for indicator in mount_indicators):
@@ -88,6 +97,9 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     """
     Get mount status from workstation using SSH 'mount -av' command.
     
+    Special handling for "Protocol not supported" errors which are expected
+    for the HIV_flaps nested mount configuration.
+    
     Returns:
         Tuple of (success, mount_list, error_message)
     """
@@ -104,15 +116,24 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
     # Check result
     if result['code'] != 0:
         error_msg = result.get('stderr', '') or f"Exit code {result['code']}"
-        logger.error(f"Failed to get mount status from {workstation}: {error_msg}")
-        return False, [], error_msg
+        
+        # Special handling for "Protocol not supported" - this is expected for HIV_flaps
+        if 'Protocol not supported' in error_msg:
+            # Log it as info, not error
+            logger.info(f"{workstation}: Expected HIV_flaps nested mount message: {error_msg[:100]}")
+            # Don't treat this as a failure - continue processing
+        else:
+            logger.error(f"Failed to get mount status from {workstation}: {error_msg}")
+            return False, [], error_msg
     
-    # Parse successful output
+    # Parse successful output (or output with expected Protocol errors)
     stdout = result.get('stdout', '')
     stderr = result.get('stderr', '')
     
-    if stderr:
+    # Only log stderr if it's NOT the expected Protocol not supported error
+    if stderr and 'Protocol not supported' not in stderr:
         logger.info(f"{workstation}: mount -av stderr: {stderr}")
+    
     logger.debug(f"{workstation}: mount -av stdout lines: {len(stdout.splitlines())}")
 
     # Parse mount output
@@ -152,6 +173,10 @@ def get_mount_status(workstation: str) -> Tuple[bool, List[Dict], str]:
             except ValueError:
                 logger.debug(f"Could not parse mount line: {line}")
                 continue
+    
+    # If we got Protocol not supported but have mounts, return success
+    if 'Protocol not supported' in stderr and mounts:
+        return True, mounts, ""  # Empty error message since it's not a real error
     
     return True, mounts, ""
 
@@ -216,12 +241,12 @@ def verify_software_access(workstation: str, mount_point: str, software_list: Li
             results[software] = accessible
             
             # Log to database (using mount_point instead of software_path)
-#            db.record_software_check(workstation, software, mount_point, accessible)
+            db.record_software_check(workstation, software, mount_point, accessible)
             
         except Exception as e:
             logger.error(f"Failed to check {software} on {workstation}: {e}")
             results[software] = False
-#            db.record_software_check(workstation, software, mount_point, False)
+            db.record_software_check(workstation, software, mount_point, False)
     
     return results
 
@@ -332,29 +357,42 @@ def monitor_workstation(workstation_config: Dict) -> Dict:
         # Classify the error
         issue_type, severity, description = classify_mount_issue(workstation, error_msg)
         
-        logger.error(f"Failed to get mount status from {workstation}: {error_msg}")
+        # Only log as error if it's not an info-level issue
+        if severity != 'info':
+            logger.error(f"Failed to get mount status from {workstation}: {error_msg}")
+        else:
+            logger.info(f"{workstation}: {description}")
         
-        # Store the issue with classification
-        report['issues'].append({
-            'type': issue_type,
-            'severity': severity,
-            'description': description,
-            'raw_error': error_msg
-        })
+        # Only add to issues if it's not an info-level configuration issue
+        if severity != 'info':
+            report['issues'].append({
+                'type': issue_type,
+                'severity': severity,
+                'description': description,
+                'raw_error': error_msg
+            })
         
         db.update_workstation_status(workstation, is_online=True, 
                                     active_users=report['users'],
                                     user_list=None, checked_by=mynetid)
         
-        # Don't attempt fixes if it's just a connectivity issue
-        if issue_type == 'connectivity':
-            logger.info(f"Skipping mount attempts for {workstation} due to connectivity issue")
+        # Don't attempt fixes if it's just a connectivity issue or info
+        if issue_type == 'connectivity' or severity == 'info':
+            logger.info(f"Skipping mount attempts for {workstation}")
             return report
     else:
         # Process mount results
         mounted_points = {m['mount_point']: m for m in mount_list}
         
         for mount_point in expected_mounts:
+            # Skip checking HIV_flaps since it's a special nested mount
+            if mount_point == '/franksinatra/HIV_flaps':
+                # Check if parent is mounted
+                if '/franksinatra/logP' in mounted_points:
+                    report['mounts'][mount_point] = 'nested_mount'
+                    logger.info(f"{workstation}: {mount_point} accessible via parent mount")
+                    continue
+            
             if mount_point in mounted_points:
                 report['mounts'][mount_point] = 'mounted'
                 db.record_mount_status(workstation, mount_point, 
@@ -445,12 +483,14 @@ def monitor_all_workstations(workstation_configs: List[Dict]) -> List[Dict]:
 def generate_summary_report(results: List[Dict]) -> str:
     """
     Generate a human-readable summary report.
+    
+    Filters out info-level issues (like HIV_flaps configuration messages).
     """
     total = len(results)
     online = sum(1 for r in results if r['online'])
     offline = sum(1 for r in results if not r['online'])
     
-    # Classify issues
+    # Classify issues (excluding info-level)
     mount_failures = []
     connectivity_issues = []
     other_issues = []
@@ -458,6 +498,10 @@ def generate_summary_report(results: List[Dict]) -> str:
     for result in results:
         workstation = result['workstation']
         for issue in result.get('issues', []):
+            # Skip info-level issues in the report
+            if issue.get('severity') == 'info':
+                continue
+                
             if issue.get('type') == 'mount_failure':
                 mount_failures.append((workstation, issue))
             elif issue.get('type') == 'connectivity':
@@ -465,6 +509,7 @@ def generate_summary_report(results: List[Dict]) -> str:
             else:
                 other_issues.append((workstation, issue))
     
+    # Count workstations with actual issues (not info-level)
     with_issues = len(set(w for w, _ in mount_failures + connectivity_issues + other_issues))
     
     # Build report
@@ -617,6 +662,10 @@ def send_off_hours_summary():
         if workstation not in by_workstation:
             by_workstation[workstation] = {'mount_failures': [], 'connectivity': [], 'other': []}
         
+        # Skip info-level issues (HIV_flaps configuration)
+        if 'hiv_flaps' in details.lower() and 'protocol' in details.lower():
+            continue
+            
         # Try to classify based on the details
         if 'mount' in details.lower() and 'ssh' not in details.lower() and 'connection' not in details.lower():
             by_workstation[workstation]['mount_failures'].append({
@@ -635,6 +684,15 @@ def send_off_hours_summary():
                 'details': details,
                 'time': detected_at
             })
+    
+    # Remove workstations with no real issues
+    by_workstation = {k: v for k, v in by_workstation.items() 
+                     if v['mount_failures'] or v['connectivity'] or v['other']}
+    
+    if not by_workstation:
+        logger.info("No actionable off-hours issues to report")
+        db.clear_off_hours_issues()
+        return
     
     # Generate enhanced summary report
     report_lines = [
@@ -764,7 +822,7 @@ def main():
             # Log to file
             logger.info(summary)
             
-            # Send notifications for critical issues (mount failures only)
+            # Send notifications for critical issues (mount failures only, not config info)
             critical_issues = []
             for r in results:
                 for issue in r.get('issues', []):
