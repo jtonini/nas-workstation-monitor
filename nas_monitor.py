@@ -237,7 +237,7 @@ def verify_software_access(workstation: str, mount_point: str, software_list: Li
         
         try:
             result = dorunrun(cmd, timeout=10)
-            accessible = result['stdout'].strip() == '1'
+            accessible = '1' in result['stdout']
             results[software] = accessible
             
             # Log to database (using mount_point instead of software_path)
