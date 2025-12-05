@@ -1,22 +1,4 @@
-_mount_issue(workstation: str, error_msg: str = "") -> tuple:
-    """
-    Classify if the issue is connectivity-related or an actual mount failure.
-    
-    Special handling for HIV_flaps nested mount configuration per faculty request.
-    
-    Returns: (issue_type, severity, description)
-        issue_type: 'connectivity', 'mount_failure', 'config_info'
-        severity: 'warning', 'critical', 'info'
-        description: Human-readable description
-    """
-    if not error_msg:
-        # No error message often means SSH worked but mount is missing
-        return ('mount_failure', 'critical', 'Mount point not found')
-    
-    error_lower = error_msg.lower().strip()
-    
-    # Empty error after SSH command often means timeout/connection issue
-    if error_lowe#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 NAS Workstation Mount Monitor
@@ -50,7 +32,25 @@ myconfig = None
 logger = None
 db = None
 
-def classifyr == '' or error_lower == '()':
+def classify_mount_issue(workstation: str, error_msg: str = "") -> tuple:
+    """
+    Classify if the issue is connectivity-related or an actual mount failure.
+    
+    Special handling for HIV_flaps nested mount configuration per faculty request.
+    
+    Returns: (issue_type, severity, description)
+        issue_type: 'connectivity', 'mount_failure', 'config_info'
+        severity: 'warning', 'critical', 'info'
+        description: Human-readable description
+    """
+    if not error_msg:
+        # No error message often means SSH worked but mount is missing
+        return ('mount_failure', 'critical', 'Mount point not found')
+    
+    error_lower = error_msg.lower().strip()
+    
+    # Empty error after SSH command often means timeout/connection issue
+    if error_lower == '' or error_lower == '()':
         return ('connectivity', 'warning', 'SSH connection timeout - unable to verify mounts')
     
     # Special handling for the HIV_flaps nested mount configuration
