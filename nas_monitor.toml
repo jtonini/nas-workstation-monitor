@@ -56,23 +56,23 @@ ssh_options = [
 ########################################################################
 
 workstations = [
-    {host = 'aamy', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'adam', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'aamy', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'adam', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'alexis', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'boyi', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'camryn', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'cooper', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'boyi', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'camryn', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'cooper', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
 #   {host = 'evan', mounts = ['/usr/local/chem.sw']}, # retired on Nov 21, 2024
-    {host = 'hamilton', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'irene2', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'josh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'justin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'kevin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'khanh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'mayer', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'michael', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'sarah', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'thais', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']}
+    {host = 'hamilton', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'irene2', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'josh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'justin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'kevin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'khanh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'mayer', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'michael', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'sarah', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'thais', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']}
 ]
 
 ########################################################################
