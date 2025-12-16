@@ -58,7 +58,7 @@ ssh_options = [
 workstations = [
     {host = 'aamy', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'adam', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'alexis', mounts = ['/usr/local/chem.sw', '/opt/intel', '/backups', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'alexis', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'boyi', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'camryn', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'cooper', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
