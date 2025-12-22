@@ -821,18 +821,32 @@ def main():
             
             # Log to file
             logger.info(summary)
-            
-            # Send notifications for critical issues (mount failures only, not config info)
+            # Send notifications for critical issues (mount failures AND offline workstations)
             critical_issues = []
+            offline_workstations = []
             for r in results:
+                # Check if workstation is offline
+                if not r.get('online', True):
+                    offline_workstations.append(r['workstation'])
+                    critical_issues.append(r)
+                # Check for mount failures
                 for issue in r.get('issues', []):
                     if issue.get('type') == 'mount_failure' and issue.get('severity') == 'critical':
-                        critical_issues.append(r)
+                        if r not in critical_issues:  # Avoid duplicates
+                            critical_issues.append(r)
                         break
             
             if critical_issues:
+                # Create descriptive subject
+                alerts = []
+                if offline_workstations:
+                    alerts.append(f"{len(offline_workstations)} offline: {', '.join(offline_workstations)}")
+                mount_failures = len([r for r in critical_issues if r.get('online', True)])
+                if mount_failures > 0:
+                    alerts.append(f"{mount_failures} mount failures")
+                
                 send_notification(
-                    f"NAS Mount Alert: {len(critical_issues)} workstation(s) with mount failures",
+                    f"NAS Alert: {' | '.join(alerts)}",
                     summary
                 )
             
