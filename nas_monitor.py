@@ -837,19 +837,42 @@ def main():
                         break
             
             if critical_issues:
+                # Check for suppressed workstations
+                suppressed = []
+                if hasattr(myconfig, 'suppress_notifications_for'):
+                    suppressed = myconfig.suppress_notifications_for
+                
                 # Create descriptive subject
                 alerts = []
+                
+                # Filter offline workstations
                 if offline_workstations:
-                    alerts.append(f"{len(offline_workstations)} offline: {', '.join(offline_workstations)}")
-                mount_failures = len([r for r in critical_issues if r.get('online', True)])
+                    reportable_offline = [ws for ws in offline_workstations if ws not in suppressed]
+                    suppressed_offline = [ws for ws in offline_workstations if ws in suppressed]
+                    
+                    if reportable_offline:
+                        alerts.append(f"{len(reportable_offline)} offline: {', '.join(reportable_offline)}")
+                    
+                    # Log suppressed notifications
+                    if suppressed_offline:
+                        logger.info(f"Suppressed offline notifications for: {', '.join(suppressed_offline)}")
+                
+                # Count mount failures (excluding suppressed workstations)
+                mount_failures = len([r for r in critical_issues 
+                                    if r.get('online', True) 
+                                    and r.get('workstation') not in suppressed])
                 if mount_failures > 0:
                     alerts.append(f"{mount_failures} mount failures")
                 
-                send_notification(
-                    f"NAS Alert: {' | '.join(alerts)}",
-                    summary
-                )
-            
+                # Only send notification if there are non-suppressed issues
+                if alerts:
+                    send_notification(
+                        f"NAS Alert: {' | '.join(alerts)}",
+                        summary
+                    )
+                else:
+                    logger.info("All critical issues are for suppressed workstations - no notification sent")
+
             if args.once:
                 break
             
