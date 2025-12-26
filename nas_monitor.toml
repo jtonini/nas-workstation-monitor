@@ -104,3 +104,9 @@ weekend_end_hour = 6
 ########################################################################
 keep_hours = 168
 aggressive_cleanup = false
+
+# Temporarily suppress email notifications for specific workstations
+# These workstations will still be monitored and logged in the database
+# but won't trigger email alerts. Remove from list when you want alerts to resume.
+# Added 2025-12-25 for winter break until 2026-01-05
+suppress_notifications_for = ['cooper']
