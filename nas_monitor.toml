@@ -62,7 +62,7 @@ workstations = [
     {host = 'boyi', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'camryn', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'cooper', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'evan', mounts = ['/usr/local/chem.sw'], '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'evan', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'hamilton', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'irene2', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'josh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
