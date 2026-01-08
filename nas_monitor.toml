@@ -61,17 +61,17 @@ workstations = [
     {host = 'alexis', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'boyi', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'camryn', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'cooper', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'cooper', mounts = ['/usr/local/chem.sw', '/opt/intel']},
     {host = 'evan', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'hamilton', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'hamilton', mounts = ['/usr/local/chem.sw', '/opt/intel'],
     {host = 'irene2', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'josh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'justin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'kevin', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
     {host = 'khanh', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'mayer', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'mayer', mounts = ['/usr/local/chem.sw', '/opt/intel']},
     {host = 'michael', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
-    {host = 'sarah', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']},
+    {host = 'sarah', mounts = ['/usr/local/chem.sw', '/opt/intel']},
     {host = 'thais', mounts = ['/usr/local/chem.sw', '/opt/intel', '/franksinatra/logP', '/franksinatra/HIV_flaps']}
 ]
 
@@ -109,4 +109,4 @@ aggressive_cleanup = false
 # These workstations will still be monitored and logged in the database
 # but won't trigger email alerts. Remove from list when you want alerts to resume.
 # Added 2025-12-25 for winter break until 2026-01-05
-suppress_notifications_for = ['cooper', 'evan']
+suppress_notifications_for = []
