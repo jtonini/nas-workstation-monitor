@@ -109,4 +109,8 @@ aggressive_cleanup = false
 # These workstations will still be monitored and logged in the database
 # but won't trigger email alerts. Remove from list when you want alerts to resume.
 # Added 2025-12-25 for winter break until 2026-01-05
-suppress_notifications_for = []
+suppress_notifications_for = [
+    "aamy", "adam", "alexis", "boyi", "camryn", "cooper", 
+    "evan", "hamilton", "irene2", "josh", "justin", "kevin", 
+    "khanh", "mayer", "michael", "sarah", "thais"
+]
