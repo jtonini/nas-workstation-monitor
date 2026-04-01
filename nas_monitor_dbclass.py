@@ -394,3 +394,42 @@ class NASMonitorDB:
                 })
             
             return results
+
+    def get_current_status(self) -> List[Tuple]:
+        """
+        Get current status of all workstations from the most recent check.
+        
+        Returns:
+            List of tuples: (workstation, mount_point, timestamp, status, 
+                           active_users, is_online, user_list)
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                WITH latest_checks AS (
+                    SELECT 
+                        workstation,
+                        mount_point,
+                        MAX(timestamp) as latest_timestamp
+                    FROM workstation_mount_status
+                    GROUP BY workstation, mount_point
+                )
+                SELECT 
+                    wms.workstation,
+                    wms.mount_point,
+                    wms.timestamp,
+                    wms.status,
+                    COALESCE(ws.active_users, 0) as active_users,
+                    COALESCE(ws.is_online, 0) as is_online,
+                    ws.user_list
+                FROM workstation_mount_status wms
+                INNER JOIN latest_checks lc 
+                    ON wms.workstation = lc.workstation 
+                    AND wms.mount_point = lc.mount_point
+                    AND wms.timestamp = lc.latest_timestamp
+                LEFT JOIN workstation_status ws
+                    ON wms.workstation = ws.workstation
+                ORDER BY wms.workstation, wms.mount_point;
+            """
+            cursor.execute(query)
+            return cursor.fetchall()
