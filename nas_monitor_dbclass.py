@@ -438,11 +438,14 @@ class NASMonitorDB:
         """Get database configuration settings."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT key, value FROM monitor_config')
-            config = {}
-            for row in cursor.fetchall():
-                config[row['key']] = row['value']
-            return config
+            cursor.execute('SELECT keep_hours, aggressive_cleanup FROM monitor_config WHERE id = 1')
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'keep_hours': row['keep_hours'],
+                    'aggressive_cleanup': bool(row['aggressive_cleanup'])
+                }
+            return {'keep_hours': 168, 'aggressive_cleanup': False}
 
     def get_unresolved_failures(self) -> List[Tuple]:
         """Get all unresolved mount failures."""

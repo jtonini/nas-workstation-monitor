@@ -240,24 +240,19 @@ SELECT
     END as action_needed,
     last_check,
     last_connectivity_issue
-FROM workstation_status
-WHERE connectivity_status != 'connected' 
-   OR mount_status = 'issues'
-   OR last_check < datetime('now', '-2 hours');
 
 -- View: Unresolved mount failures
 CREATE VIEW IF NOT EXISTS unresolved_failures AS
     SELECT
         workstation,
         mount_point,
-        first_seen AS first_failure,
-        last_seen AS last_failure,
-        occurrence_count AS failure_count,
-        julianday('now') - julianday(first_seen) AS days_failing,
-        error_message
+        first_failure,
+        last_failure,
+        failure_count,
+        julianday('now') - julianday(first_failure) AS days_failing
     FROM mount_failures
     WHERE resolved = 0
-    ORDER BY occurrence_count DESC, first_seen ASC;
+    ORDER BY failure_count DESC, first_failure ASC;
 
 -- View: Recent failure summary (last 24 hours)
 CREATE VIEW IF NOT EXISTS recent_failure_summary AS
@@ -265,10 +260,10 @@ CREATE VIEW IF NOT EXISTS recent_failure_summary AS
         workstation,
         COUNT(*) AS failure_count,
         COUNT(DISTINCT mount_point) AS affected_mounts,
-        MIN(first_seen) AS earliest_failure,
-        MAX(last_seen) AS latest_failure
+        MIN(first_failure) AS earliest_failure,
+        MAX(last_failure) AS latest_failure
     FROM mount_failures
-    WHERE last_seen >= datetime('now', '-24 hours')
+    WHERE last_failure >= datetime('now', '-24 hours')
     GROUP BY workstation
     ORDER BY failure_count DESC;
 
