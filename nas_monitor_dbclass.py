@@ -433,3 +433,98 @@ class NASMonitorDB:
             """
             cursor.execute(query)
             return cursor.fetchall()
+
+    def get_config(self) -> Dict[str, Any]:
+        """Get database configuration settings."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT key, value FROM monitor_config')
+            config = {}
+            for row in cursor.fetchall():
+                config[row['key']] = row['value']
+            return config
+
+    def get_unresolved_failures(self) -> List[Tuple]:
+        """Get all unresolved mount failures."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM unresolved_failures')
+            return cursor.fetchall()
+
+    def get_recent_failures(self) -> List[Tuple]:
+        """Get summary of recent failures (last 24 hours)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM recent_failure_summary')
+            return cursor.fetchall()
+
+    def get_reliability(self) -> List[Tuple]:
+        """Get 7-day reliability statistics for all workstations."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM workstation_reliability ORDER BY workstation')
+            return cursor.fetchall()
+
+    def get_software_summary(self) -> List[Tuple]:
+        """Get software availability summary (last 7 days)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM software_summary')
+            return cursor.fetchall()
+
+    def get_workstation_detail(self, workstation: str, hours: int = 24) -> Dict[str, Any]:
+        """Get detailed history for a specific workstation."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            since_time = datetime.datetime.now() - datetime.timedelta(hours=hours)
+            
+            # Get mount history
+            cursor.execute('''
+                SELECT 
+                    mount_point,
+                    status,
+                    timestamp,
+                    error_message
+                FROM workstation_mount_status
+                WHERE workstation = ? AND timestamp > ?
+                ORDER BY timestamp DESC
+            ''', (workstation, since_time))
+            mount_history = cursor.fetchall()
+            
+            # Get current status
+            cursor.execute('''
+                SELECT 
+                    is_online,
+                    active_users,
+                    user_list,
+                    last_seen
+                FROM workstation_status
+                WHERE workstation = ?
+            ''', (workstation,))
+            current_status = cursor.fetchone()
+            
+            # Get failures
+            cursor.execute('''
+                SELECT 
+                    mount_point,
+                    error_message,
+                    first_seen,
+                    last_seen,
+                    occurrence_count,
+                    resolved
+                FROM mount_failures
+                WHERE workstation = ? AND first_seen > ?
+                ORDER BY first_seen DESC
+            ''', (workstation, since_time))
+            failures = cursor.fetchall()
+            
+            return {
+                'workstation': workstation,
+                'mount_history': mount_history,
+                'current_status': current_status,
+                'failures': failures
+            }
+
+    def close(self):
+        """Close database connection. No-op since we use context managers."""
+        pass
