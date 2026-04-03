@@ -510,14 +510,14 @@ class NASMonitorDB:
             cursor.execute('''
                 SELECT 
                     mount_point,
-                    error_message,
-                    first_seen,
-                    last_seen,
-                    occurrence_count,
+                    
+                    first_failure,
+                    last_failure,
+                    failure_count,
                     resolved
                 FROM mount_failures
-                WHERE workstation = ? AND first_seen > ?
-                ORDER BY first_seen DESC
+                WHERE workstation = ? AND first_failure > ?
+                ORDER BY first_failure DESC
             ''', (workstation, since_time))
             failures = cursor.fetchall()
             
