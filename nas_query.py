@@ -200,7 +200,11 @@ def show_failures() -> None:
         LIMIT 50
     """
 
-    recent = db.execute_SQL(SQL)
+    # Execute query using v2.0 API
+    with db._get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(SQL)
+        recent = cursor.fetchall()
 
     if not recent:
         print("No failures in the last 7 days.")
