@@ -339,23 +339,45 @@ def show_workstation_detail(workstation: str, hours: int = 24) -> None:
     print("=" * 70 + "\n")
 
     detail = db.get_workstation_detail(workstation, hours)
-
-    if use_pandas and isinstance(detail, pandas.DataFrame):
-        if detail.empty:
-            print(f"No records found for {workstation}")
-        else:
-            print(detail.to_string(index=False))
+    
+    # detail is a dictionary with keys: mount_history, current_status, failures
+    if not detail or not detail.get('mount_history'):
+        print(f"No mount history found for {workstation}")
     else:
-        if not detail:
-            print(f"No records found for {workstation}")
-        else:
-            print(f"{'Timestamp':<20} {'Mount Point':<25} {'Status':<10} {'Users':<6} {'User List':<30}")
-            print("-" * 106)
-            for row in detail:
-                user_list = row[5] if len(row) > 5 and row[5] else ''
-                print(f"{row[0]:<20} {row[1]:<25} {row[3]:<10} {row[4]:<6} {user_list:<30}")
+        print(f"{'Timestamp':<20} {'Mount Point':<25} {'Status':<10} {'Error':<30}")
+        print("-" * 90)
+        for row in detail['mount_history']:
+            # row is: (mount_point, status, timestamp, error_message)
+            timestamp = row[2] if len(row) > 2 else ''
+            mount_point = row[0] if len(row) > 0 else ''
+            status = row[1] if len(row) > 1 else ''
+            error = row[3] if len(row) > 3 and row[3] else ''
+            print(f"{timestamp:<20} {mount_point:<25} {status:<10} {error:<30}")
+    
+    # Show current status
+    if detail.get('current_status'):
+        print("\n" + "-" * 70)
+        print("CURRENT STATUS")
+        print("-" * 70)
+        cs = detail['current_status']
+        # cs is: (is_online, active_users, user_list, last_seen)
+        print(f"Online: {bool(cs[0]) if cs else 'Unknown'}")
+        print(f"Active users: {cs[1] if cs and len(cs) > 1 else 0}")
+        print(f"User list: {cs[2] if cs and len(cs) > 2 and cs[2] else 'None'}")
+    
+    # Show failures
+    if detail.get('failures'):
+        print("\n" + "-" * 70)
+        print("RECENT FAILURES")
+        print("-" * 70)
+        print(f"{'Mount Point':<25} {'First Failure':<20} {'Last Failure':<20} {'Count':<6}")
+        print("-" * 75)
+        for f in detail['failures']:
+            # f is: (mount_point, first_failure, last_failure, failure_count, resolved)
+            print(f"{f[0]:<25} {f[1]:<20} {f[2]:<20} {f[3]:<6}")
 
     print()
+
 
 
 @trap
